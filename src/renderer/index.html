@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Noty</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h2>通知</h2>
+        <button id="settingsBtn" class="icon-btn" title="设置">⚙️</button>
+      </div>
+
+      <div
+        id="notificationList"
+        class="notification-list"
+        style="height: 100px; overflow: scroll; background: #eee"
+      >
+        <!-- 通知项将动态插入 -->
+      </div>
+
+      <!--
+      <div class="footer">
+        <button id="clearReadBtn" class="btn">清空已读</button>
+      </div>
+      -->
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

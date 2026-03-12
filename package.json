@@ -1,0 +1,23 @@
+{
+  "name": "noty-mac",
+  "version": "1.0.0",
+  "description": "macOS 菜单栏应用，用于显示 ntfy.sh 通知",
+  "main": "src/main/index.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --enable-logging"
+  },
+  "keywords": [
+    "electron",
+    "ntfy",
+    "notifications",
+    "macos",
+    "menubar"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "electron": "^28.0.0",
+    "electron-store": "^8.1.0"
+  }
+}
