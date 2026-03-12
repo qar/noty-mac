@@ -23,5 +23,10 @@ contextBridge.exposeInMainWorld('api', {
   // 监听新通知
   onNewNotification: (callback) => {
     ipcRenderer.on('new-notification', (event, notification) => callback(notification));
+  },
+
+  // 监听窗口显示事件
+  onWindowShown: (callback) => {
+    ipcRenderer.on('window-shown', () => callback());
   }
 });

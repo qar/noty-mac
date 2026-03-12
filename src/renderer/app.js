@@ -74,11 +74,14 @@ function renderNotifications() {
 // 设置事件监听
 function setupEventListeners() {
   // 清空已读按钮
-  document.getElementById('clearReadBtn').addEventListener('click', async () => {
-    notifications = await window.api.clearRead();
-    await loadData();
-    renderNotifications();
-  });
+  const clearReadBtn = document.getElementById('clearReadBtn');
+  if (clearReadBtn) {
+    clearReadBtn.addEventListener('click', async () => {
+      notifications = await window.api.clearRead();
+      await loadData();
+      renderNotifications();
+    });
+  }
 
   // 设置按钮
   document.getElementById('settingsBtn').addEventListener('click', () => {
@@ -87,6 +90,12 @@ function setupEventListeners() {
 
   // 监听新通知
   window.api.onNewNotification(async (notification) => {
+    await loadData();
+    renderNotifications();
+  });
+
+  // 窗口每次显示时刷新数据
+  window.api.onWindowShown(async () => {
     await loadData();
     renderNotifications();
   });

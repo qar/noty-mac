@@ -65,6 +65,9 @@ function showWindow(tray) {
   mainWindow.setPosition(x, y, false);
   mainWindow.show();
   mainWindow.focus();
+
+  // 每次显示窗口时通知渲染进程刷新数据
+  mainWindow.webContents.send('window-shown');
 }
 
 function getWindow() {
