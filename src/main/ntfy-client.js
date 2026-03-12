@@ -27,7 +27,14 @@ class NtfyClient extends EventEmitter {
   }
 
   async startSSEConnection(channel) {
-    const url = `${channel.url}/json?poll=1`;
+    const notifications = store.get('notifications');
+    const channelNotifications = notifications.filter(n => n.channelId === channel.id);
+    const lastTimestamp = channelNotifications.length > 0
+      ? Math.max(...channelNotifications.map(n => n.timestamp))
+      : 0;
+
+    const sinceParam = lastTimestamp > 0 ? `since=${lastTimestamp}` : 'since=all';
+    const url = `${channel.url}/json?${sinceParam}`;
 
     const controller = new AbortController();
     this.connections.set(channel.id, controller);
@@ -75,17 +82,22 @@ class NtfyClient extends EventEmitter {
   }
 
   handleNotification(channel, data) {
+    const notifications = store.get('notifications');
+
+    // 去重：ntfy 消息 ID 已存在则跳过
+    if (data.id && notifications.some(n => n.ntfyId === data.id)) {
+      return;
+    }
+
     const notification = {
       id: generateId(),
+      ntfyId: data.id || null,
       channelId: channel.id,
       title: data.title || channel.name,
       message: data.message || '',
       timestamp: data.time || Date.now(),
       read: false
     };
-
-    // 保存到存储
-    const notifications = store.get('notifications');
     notifications.unshift(notification);
 
     // 限制历史记录数量

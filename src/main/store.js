@@ -21,6 +21,7 @@ const schema = {
       type: 'object',
       properties: {
         id: { type: 'string' },
+        ntfyId: { type: 'string' },
         channelId: { type: 'string' },
         title: { type: 'string' },
         message: { type: 'string' },
