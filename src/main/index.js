@@ -143,6 +143,15 @@ function setupIPC() {
     return notifications;
   });
 
+  // 全部标记为已读
+  ipcMain.handle('mark-all-as-read', () => {
+    const notifications = store.get('notifications');
+    notifications.forEach(n => { n.read = true; });
+    store.set('notifications', notifications);
+    updateTrayIcon();
+    return notifications;
+  });
+
   // 清空已读
   ipcMain.handle('clear-read', () => {
     const notifications = store.get('notifications').filter(n => !n.read);

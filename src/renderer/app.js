@@ -25,6 +25,11 @@ async function loadData() {
 // 渲染通知列表
 function renderNotifications() {
   const listEl = document.getElementById('notificationList');
+  const markAllBtn = document.getElementById('markAllReadBtn');
+
+  // 有未读通知时才显示按钮
+  const hasUnread = notifications.some(n => !n.read);
+  markAllBtn.style.display = hasUnread ? '' : 'none';
 
   // 过滤已读通知（如果设置了隐藏）
   let displayNotifications = notifications;
@@ -82,6 +87,13 @@ function setupEventListeners() {
       renderNotifications();
     });
   }
+
+  // 全部标记已读按钮
+  document.getElementById('markAllReadBtn').addEventListener('click', async () => {
+    notifications = await window.api.markAllAsRead();
+    await loadData();
+    renderNotifications();
+  });
 
   // 设置按钮
   document.getElementById('settingsBtn').addEventListener('click', () => {
