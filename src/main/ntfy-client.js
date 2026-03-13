@@ -33,7 +33,10 @@ class NtfyClient extends EventEmitter {
       ? Math.max(...channelNotifications.map(n => n.timestamp))
       : 0;
 
-    const sinceParam = lastTimestamp > 0 ? `since=${lastTimestamp}` : 'since=all';
+    const sinceTimestamp = lastTimestamp >= 1e12
+      ? Math.floor(lastTimestamp / 1000)
+      : lastTimestamp;
+    const sinceParam = sinceTimestamp > 0 ? `since=${sinceTimestamp}` : 'since=all';
     const url = `${channel.url}/json?${sinceParam}`;
 
     const controller = new AbortController();
@@ -89,13 +92,16 @@ class NtfyClient extends EventEmitter {
       return;
     }
 
+    const rawTimestamp = data.time ?? Date.now();
+    const normalizedTimestamp = rawTimestamp < 1e12 ? rawTimestamp * 1000 : rawTimestamp;
+
     const notification = {
       id: generateId(),
       ntfyId: data.id || null,
       channelId: channel.id,
       title: data.title || channel.name,
       message: data.message || '',
-      timestamp: data.time || Date.now(),
+      timestamp: normalizedTimestamp,
       read: false
     };
     notifications.unshift(notification);
