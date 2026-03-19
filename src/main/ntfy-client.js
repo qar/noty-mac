@@ -7,6 +7,106 @@ function generateId() {
   return crypto.randomBytes(16).toString('hex');
 }
 
+function isValidTmuxTarget(target) {
+  return typeof target === 'string'
+    && target.length > 0
+    && target.length <= 128
+    && !target.startsWith('-')
+    && /^[A-Za-z0-9_.:%@+/-]+$/.test(target);
+}
+
+function extractTmuxTargetFromMessage(message) {
+  if (typeof message !== 'string') {
+    return null;
+  }
+
+  const line = message
+    .split('\n')
+    .find(item => /^\s*(?:🖥\s*)?tmux\s*:/i.test(item));
+
+  if (!line) {
+    return null;
+  }
+
+  const match = line.match(/^\s*(?:🖥\s*)?tmux\s*:\s*([A-Za-z0-9_.:%@+/-]+)\s*$/i);
+  return match ? match[1] : null;
+}
+
+function normalizeTmuxMetadata(data) {
+  const tmux = data.tmux || data.metadata?.tmux;
+
+  const session = tmux && typeof tmux === 'object' && tmux.session !== undefined && tmux.session !== null
+    ? String(tmux.session)
+    : null;
+  const window = tmux && typeof tmux === 'object' && tmux.window !== undefined && tmux.window !== null
+    ? String(tmux.window)
+    : null;
+  const pane = tmux && typeof tmux === 'object' && tmux.pane !== undefined && tmux.pane !== null
+    ? String(tmux.pane)
+    : null;
+
+  let target = tmux && typeof tmux === 'object' && tmux.target !== undefined && tmux.target !== null
+    ? String(tmux.target)
+    : null;
+
+  if (!target && session && window !== null && pane !== null) {
+    target = `${session}:${window}.${pane}`;
+  }
+
+  if (!target) {
+    target = extractTmuxTargetFromMessage(data.message);
+  }
+
+  if (!target || !isValidTmuxTarget(target)) {
+    return null;
+  }
+
+  const tmuxMetadata = { target };
+  if (session) tmuxMetadata.session = session;
+  if (window !== null) tmuxMetadata.window = window;
+  if (pane !== null) tmuxMetadata.pane = pane;
+
+  return tmuxMetadata;
+}
+
+function normalizeChainTestApp(data) {
+  const value = data.chainTestApp
+    || data.testApp
+    || data.metadata?.chainTestApp
+    || data.metadata?.testApp
+    || data.metadata?.macos?.testApp;
+
+  if (!value) {
+    return null;
+  }
+
+  const app = String(value).trim().toLowerCase();
+  if (app === 'calendar' || app === 'safari') {
+    return app;
+  }
+
+  return null;
+}
+
+function normalizeNotificationMetadata(data) {
+  const tmux = normalizeTmuxMetadata(data);
+  const chainTestApp = normalizeChainTestApp(data);
+
+  if (!tmux && !chainTestApp) {
+    return null;
+  }
+
+  const metadata = {};
+  if (tmux) {
+    metadata.tmux = tmux;
+  }
+  if (chainTestApp) {
+    metadata.chainTestApp = chainTestApp;
+  }
+
+  return metadata;
+}
+
 class NtfyClient extends EventEmitter {
   constructor() {
     super();
@@ -95,6 +195,8 @@ class NtfyClient extends EventEmitter {
     const rawTimestamp = data.time ?? Date.now();
     const normalizedTimestamp = rawTimestamp < 1e12 ? rawTimestamp * 1000 : rawTimestamp;
 
+    const metadata = normalizeNotificationMetadata(data);
+
     const notification = {
       id: generateId(),
       ntfyId: data.id || null,
@@ -104,6 +206,10 @@ class NtfyClient extends EventEmitter {
       timestamp: normalizedTimestamp,
       read: false
     };
+
+    if (metadata) {
+      notification.metadata = metadata;
+    }
     notifications.unshift(notification);
 
     // 限制历史记录数量

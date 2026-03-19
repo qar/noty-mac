@@ -26,7 +26,22 @@ const schema = {
         title: { type: 'string' },
         message: { type: 'string' },
         timestamp: { type: 'number' },
-        read: { type: 'boolean' }
+        read: { type: 'boolean' },
+        metadata: {
+          type: 'object',
+          properties: {
+            tmux: {
+              type: 'object',
+              properties: {
+                target: { type: 'string' },
+                session: { type: 'string' },
+                window: { type: 'string' },
+                pane: { type: 'string' }
+              }
+            },
+            chainTestApp: { type: 'string' }
+          }
+        }
       },
       required: ['id', 'channelId', 'message', 'timestamp', 'read']
     }

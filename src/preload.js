@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('api', {
   getNotifications: () => ipcRenderer.invoke('get-notifications'),
   markAsRead: (id) => ipcRenderer.invoke('mark-as-read', id),
   markAllAsRead: () => ipcRenderer.invoke('mark-all-as-read'),
+  jumpToNotificationTarget: (id, options) => ipcRenderer.invoke('jump-to-notification-target', id, options),
   clearRead: () => ipcRenderer.invoke('clear-read'),
 
   // 频道相关

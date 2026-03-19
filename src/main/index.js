@@ -1,4 +1,5 @@
 const { app, Tray, Menu, ipcMain, nativeImage, BrowserWindow } = require('electron');
+const { execFile } = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
 const store = require('./store');
@@ -7,6 +8,174 @@ const { toggleWindow, getWindow } = require('./window');
 
 function generateId() {
   return crypto.randomBytes(16).toString('hex');
+}
+
+function isValidTmuxTarget(target) {
+  return typeof target === 'string'
+    && target.length > 0
+    && target.length <= 128
+    && !target.startsWith('-')
+    && /^[A-Za-z0-9_.:%@+/-]+$/.test(target);
+}
+
+function execTmux(args) {
+  const candidates = ['tmux', '/opt/homebrew/bin/tmux', '/usr/local/bin/tmux', '/usr/bin/tmux'];
+
+  return new Promise((resolve, reject) => {
+    const run = (index) => {
+      if (index >= candidates.length) {
+        reject(new Error('tmux_not_found'));
+        return;
+      }
+
+      execFile(candidates[index], args, { timeout: 5000 }, (error, stdout, stderr) => {
+        if (!error) {
+          resolve(stdout?.trim() || '');
+          return;
+        }
+
+        if (error.code === 'ENOENT') {
+          run(index + 1);
+          return;
+        }
+
+        reject(new Error(stderr?.trim() || error.message));
+      });
+    };
+
+    run(0);
+  });
+}
+
+function execOpen(args) {
+  return new Promise((resolve, reject) => {
+    execFile('/usr/bin/open', args, { timeout: 5000 }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr?.trim() || error.message));
+        return;
+      }
+      resolve(stdout?.trim() || '');
+    });
+  });
+}
+
+function execAppleScript(lines) {
+  const args = lines.flatMap(line => ['-e', line]);
+
+  return new Promise((resolve, reject) => {
+    execFile('/usr/bin/osascript', args, { timeout: 5000 }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr?.trim() || error.message));
+        return;
+      }
+      resolve(stdout?.trim() || '');
+    });
+  });
+}
+
+async function focusApp(appName) {
+  try {
+    await execOpen(['-a', appName]);
+  } catch (error) {
+    return { success: false, reason: `${appName.toLowerCase()}_unavailable` };
+  }
+
+  try {
+    await execAppleScript([`tell application "${appName}" to activate`]);
+  } catch (error) {
+    return { success: false, reason: `${appName.toLowerCase()}_activate_failed` };
+  }
+
+  return { success: true };
+}
+
+async function listTmuxClients() {
+  try {
+    const output = await execTmux(['list-clients', '-F', '#{client_name}\t#{session_name}\t#{client_termname}\t#{client_activity}']);
+    return output
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [name = '', session = '', termname = '', activity = '0'] = line.split('\t');
+        return {
+          name,
+          session,
+          termname: termname.toLowerCase(),
+          activity: Number(activity) || 0
+        };
+      })
+      .filter(client => client.name);
+  } catch (error) {
+    return [];
+  }
+}
+
+function pickTmuxClient(clients, targetSession) {
+  const kittyClients = clients.filter(client => client.termname.includes('kitty'));
+  if (kittyClients.length === 0) {
+    return null;
+  }
+
+  const kittyOnTarget = kittyClients
+    .filter(client => client.session === targetSession)
+    .sort((a, b) => b.activity - a.activity)[0];
+  if (kittyOnTarget) {
+    return kittyOnTarget;
+  }
+
+  return kittyClients.sort((a, b) => b.activity - a.activity)[0];
+}
+
+async function jumpToTmuxTarget(target, options = {}) {
+  if (!isValidTmuxTarget(target)) {
+    return { success: false, reason: 'invalid_target' };
+  }
+
+  const chainTestApp = options.chainTestApp === 'calendar' || options.chainTestApp === 'safari'
+    ? options.chainTestApp
+    : null;
+
+  try {
+    const session = await execTmux(['display-message', '-p', '-t', target, '#S']);
+    const windowTarget = await execTmux(['display-message', '-p', '-t', target, '#S:#I']);
+    const clients = await listTmuxClients();
+    const client = pickTmuxClient(clients, session);
+
+    if (!client) {
+      return { success: false, reason: 'no_attached_client' };
+    }
+
+    if (chainTestApp) {
+      const testAppName = chainTestApp === 'calendar' ? 'Calendar' : 'Safari';
+      const testAppResult = await focusApp(testAppName);
+      if (!testAppResult.success) {
+        return { success: false, reason: testAppResult.reason };
+      }
+    }
+
+    const kittyResult = await focusApp('Kitty');
+    if (!kittyResult.success) {
+      return { success: false, reason: kittyResult.reason };
+    }
+
+    await execTmux(['switch-client', '-c', client.name, '-t', session]);
+    await execTmux(['select-window', '-t', windowTarget]);
+    await execTmux(['select-pane', '-t', target]);
+
+    const finalFocusResult = await focusApp('Kitty');
+    if (!finalFocusResult.success) {
+      return { success: false, reason: finalFocusResult.reason };
+    }
+
+    return { success: true };
+  } catch (error) {
+    if (error.message === 'tmux_not_found') {
+      return { success: false, reason: 'tmux_not_found' };
+    }
+
+    return { success: false, reason: error.message || 'tmux_error' };
+  }
 }
 
 let tray = null;
@@ -79,8 +248,11 @@ function createTray() {
     }
   ]);
 
-  tray.setContextMenu(contextMenu);
+  tray.on('right-click', () => {
+    tray.popUpContextMenu(contextMenu);
+  });
 }
+
 
 function updateTrayIcon() {
   const notifications = store.get('notifications');
@@ -157,6 +329,23 @@ function setupIPC() {
     const notifications = store.get('notifications').filter(n => !n.read);
     store.set('notifications', notifications);
     return notifications;
+  });
+
+  // 根据通知跳转 tmux 目标
+  ipcMain.handle('jump-to-notification-target', async (event, id, options = {}) => {
+    const notifications = store.get('notifications');
+    const notification = notifications.find(n => n.id === id);
+    const target = notification?.metadata?.tmux?.target;
+
+    if (!target) {
+      return { success: false, reason: 'no_target' };
+    }
+
+    const chainTestApp = options.chainTestApp
+      || notification?.metadata?.chainTestApp
+      || null;
+
+    return jumpToTmuxTarget(target, { chainTestApp });
   });
 
   // 获取频道列表

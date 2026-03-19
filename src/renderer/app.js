@@ -69,7 +69,30 @@ function renderNotifications() {
   listEl.querySelectorAll('.notification-item').forEach(item => {
     item.addEventListener('click', async () => {
       const id = item.dataset.id;
-      notifications = await window.api.markAsRead(id);
+      const notification = notifications.find(n => n.id === id);
+      const hasTmuxTarget = !!notification?.metadata?.tmux?.target;
+
+      let shouldMarkAsRead = true;
+      if (hasTmuxTarget) {
+        try {
+          const chainTestApp = notification?.metadata?.chainTestApp;
+          const result = await window.api.jumpToNotificationTarget(
+            id,
+            chainTestApp ? { chainTestApp } : undefined
+          );
+          if (!result?.success) {
+            shouldMarkAsRead = false;
+            console.error('Failed to jump tmux target:', result?.reason || 'unknown_error');
+          }
+        } catch (error) {
+          shouldMarkAsRead = false;
+          console.error('Failed to jump tmux target:', error);
+        }
+      }
+
+      if (shouldMarkAsRead) {
+        notifications = await window.api.markAsRead(id);
+      }
       await loadData();
       renderNotifications();
     });
