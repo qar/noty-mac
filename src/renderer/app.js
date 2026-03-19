@@ -71,9 +71,10 @@ function renderNotifications() {
       const id = item.dataset.id;
       const notification = notifications.find(n => n.id === id);
       const hasTmuxTarget = !!notification?.metadata?.tmux?.target;
+      const hasTmuxLine = /^\s*(?:🖥\s*)?tmux\s*:\s*([A-Za-z0-9_.:%@+/-]+)\s*$/im.test(notification?.message || '');
 
       let shouldMarkAsRead = true;
-      if (hasTmuxTarget) {
+      if (hasTmuxTarget || hasTmuxLine) {
         try {
           const chainTestApp = notification?.metadata?.chainTestApp;
           const result = await window.api.jumpToNotificationTarget(

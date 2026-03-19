@@ -18,6 +18,23 @@ function isValidTmuxTarget(target) {
     && /^[A-Za-z0-9_.:%@+/-]+$/.test(target);
 }
 
+function extractTmuxTargetFromMessage(message) {
+  if (typeof message !== 'string') {
+    return null;
+  }
+
+  const line = message
+    .split('\n')
+    .find(item => /^\s*(?:🖥\s*)?tmux\s*:/i.test(item));
+
+  if (!line) {
+    return null;
+  }
+
+  const match = line.match(/^\s*(?:🖥\s*)?tmux\s*:\s*([A-Za-z0-9_.:%@+/-]+)\s*$/i);
+  return match ? match[1] : null;
+}
+
 function execTmux(args) {
   const candidates = ['tmux', '/opt/homebrew/bin/tmux', '/usr/local/bin/tmux', '/usr/bin/tmux'];
 
@@ -162,11 +179,6 @@ async function jumpToTmuxTarget(target, options = {}) {
     await execTmux(['switch-client', '-c', client.name, '-t', session]);
     await execTmux(['select-window', '-t', windowTarget]);
     await execTmux(['select-pane', '-t', target]);
-
-    const finalFocusResult = await focusApp('Kitty');
-    if (!finalFocusResult.success) {
-      return { success: false, reason: finalFocusResult.reason };
-    }
 
     return { success: true };
   } catch (error) {
@@ -335,7 +347,8 @@ function setupIPC() {
   ipcMain.handle('jump-to-notification-target', async (event, id, options = {}) => {
     const notifications = store.get('notifications');
     const notification = notifications.find(n => n.id === id);
-    const target = notification?.metadata?.tmux?.target;
+    const target = notification?.metadata?.tmux?.target
+      || extractTmuxTargetFromMessage(notification?.message || '');
 
     if (!target) {
       return { success: false, reason: 'no_target' };
