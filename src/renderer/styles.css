@@ -121,31 +121,10 @@ body {
   word-wrap: break-word;
 }
 
-.notification-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 6px;
-}
-
 .notification-channel {
   font-size: 11px;
   color: #999;
-  margin-top: 0;
-}
-
-.mark-read-btn {
-  border: 1px solid rgba(0, 0, 0, 0.15);
-  background: white;
-  color: #666;
-  font-size: 11px;
-  border-radius: 6px;
-  padding: 2px 8px;
-  cursor: pointer;
-}
-
-.mark-read-btn:hover {
-  background: rgba(0, 0, 0, 0.05);
+  margin-top: 6px;
 }
 
 .empty-state {

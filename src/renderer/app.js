@@ -53,10 +53,6 @@ function renderNotifications() {
     const time = formatTime(notification.timestamp);
     const readClass = notification.read ? 'read' : '';
 
-    const markReadBtn = notification.read
-      ? ''
-      : `<button class="mark-read-btn" data-id="${notification.id}" title="标记已读">已读</button>`;
-
     return `
       <div class="notification-item ${readClass}" data-id="${notification.id}">
         <div class="notification-header">
@@ -64,10 +60,7 @@ function renderNotifications() {
           <div class="notification-time">${time}</div>
         </div>
         <div class="notification-message">${escapeHtml(notification.message)}</div>
-        <div class="notification-footer">
-          <div class="notification-channel">📢 ${escapeHtml(channelName)}</div>
-          ${markReadBtn}
-        </div>
+        <div class="notification-channel">📢 ${escapeHtml(channelName)}</div>
       </div>
     `;
   }).join('');
@@ -94,13 +87,7 @@ function renderNotifications() {
           console.error('Failed to jump tmux target:', error);
         }
       }
-    });
-  });
 
-  listEl.querySelectorAll('.mark-read-btn').forEach(button => {
-    button.addEventListener('click', async (event) => {
-      event.stopPropagation();
-      const id = button.dataset.id;
       notifications = await window.api.markAsRead(id);
       await loadData();
       renderNotifications();
