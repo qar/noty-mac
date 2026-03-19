@@ -53,6 +53,10 @@ function renderNotifications() {
     const time = formatTime(notification.timestamp);
     const readClass = notification.read ? 'read' : '';
 
+    const markReadBtn = notification.read
+      ? ''
+      : `<button class="mark-read-btn" data-id="${notification.id}" title="标记已读">已读</button>`;
+
     return `
       <div class="notification-item ${readClass}" data-id="${notification.id}">
         <div class="notification-header">
@@ -60,7 +64,10 @@ function renderNotifications() {
           <div class="notification-time">${time}</div>
         </div>
         <div class="notification-message">${escapeHtml(notification.message)}</div>
-        <div class="notification-channel">📢 ${escapeHtml(channelName)}</div>
+        <div class="notification-footer">
+          <div class="notification-channel">📢 ${escapeHtml(channelName)}</div>
+          ${markReadBtn}
+        </div>
       </div>
     `;
   }).join('');
@@ -73,7 +80,6 @@ function renderNotifications() {
       const hasTmuxTarget = !!notification?.metadata?.tmux?.target;
       const hasTmuxLine = /^\s*(?:🖥\s*)?tmux\s*:\s*([A-Za-z0-9_.:%@+/-]+)\s*$/im.test(notification?.message || '');
 
-      let shouldMarkAsRead = true;
       if (hasTmuxTarget || hasTmuxLine) {
         try {
           const chainTestApp = notification?.metadata?.chainTestApp;
@@ -82,18 +88,20 @@ function renderNotifications() {
             chainTestApp ? { chainTestApp } : undefined
           );
           if (!result?.success) {
-            shouldMarkAsRead = false;
             console.error('Failed to jump tmux target:', result?.reason || 'unknown_error');
           }
         } catch (error) {
-          shouldMarkAsRead = false;
           console.error('Failed to jump tmux target:', error);
         }
       }
+    });
+  });
 
-      if (shouldMarkAsRead) {
-        notifications = await window.api.markAsRead(id);
-      }
+  listEl.querySelectorAll('.mark-read-btn').forEach(button => {
+    button.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      const id = button.dataset.id;
+      notifications = await window.api.markAsRead(id);
       await loadData();
       renderNotifications();
     });
