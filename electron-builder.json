@@ -1,0 +1,16 @@
+{
+  "appId": "com.noty.mac",
+  "productName": "Noty",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**/*",
+    "dist-electron/**/*"
+  ],
+  "mac": {
+    "target": ["dmg"],
+    "category": "public.app-category.utilities",
+    "icon": "assets/icon.png"
+  }
+}
