@@ -202,6 +202,7 @@ app.on('window-all-closed', (e) => {
 app.whenReady().then(() => {
   createTray();
   setupIPC();
+  updateTrayIcon();
 
   // 初始化 ntfy 客户端
   ntfyClient = new NtfyClient();
@@ -221,12 +222,16 @@ app.whenReady().then(() => {
   ntfyClient.subscribeToAllChannels();
 });
 
+function loadTrayTemplateImage() {
+  const iconPath = path.join(__dirname, '../../assets/tray-template.png');
+  const icon = nativeImage.createFromPath(iconPath);
+  icon.setTemplateImage(true);
+  return icon;
+}
+
 function createTray() {
   // 创建托盘图标
-  const iconPath = path.join(__dirname, '../../assets/icon.png');
-  const icon = nativeImage.createFromPath(iconPath);
-
-  tray = new Tray(icon.resize({ width: 16, height: 16 }));
+  tray = new Tray(loadTrayTemplateImage());
   tray.setToolTip('Noty - ntfy.sh 通知');
 
   // 点击托盘图标
@@ -270,19 +275,8 @@ function updateTrayIcon() {
   const notifications = store.get('notifications');
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  if (unreadCount > 0) {
-    // 有未读通知，使用带标记的图标
-    const iconPath = path.join(__dirname, '../../assets/icon-unread.png');
-    const icon = nativeImage.createFromPath(iconPath);
-    tray.setImage(icon.resize({ width: 16, height: 16 }));
-    tray.setTitle(` ${unreadCount}`);
-  } else {
-    // 无未读通知
-    const iconPath = path.join(__dirname, '../../assets/icon.png');
-    const icon = nativeImage.createFromPath(iconPath);
-    tray.setImage(icon.resize({ width: 16, height: 16 }));
-    tray.setTitle('');
-  }
+  tray.setImage(loadTrayTemplateImage());
+  tray.setTitle(unreadCount > 0 ? ` ${unreadCount}` : '');
 }
 
 function openSettingsWindow() {

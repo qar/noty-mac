@@ -6,7 +6,8 @@
   },
   "files": [
     "dist/**/*",
-    "dist-electron/**/*"
+    "dist-electron/**/*",
+    "assets/**/*"
   ],
   "mac": {
     "target": ["dmg"],
