@@ -196,6 +196,59 @@
       padding: 40px 20px;
       color: #999;
     }
+
+    .tutorial-group {
+      background: white;
+      border-radius: 8px;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .tutorial-block {
+      border: 1px solid rgba(0, 0, 0, 0.06);
+      border-radius: 8px;
+      padding: 12px;
+      background: rgba(0, 0, 0, 0.02);
+    }
+
+    .tutorial-block-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 6px;
+    }
+
+    .tutorial-block-text {
+      font-size: 13px;
+      color: #555;
+      line-height: 1.5;
+    }
+
+    .tutorial-code {
+      margin-top: 8px;
+      background: #1f2937;
+      color: #e5e7eb;
+      border-radius: 6px;
+      padding: 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .tutorial-note {
+      font-size: 12px;
+      color: #666;
+      padding: 8px 10px;
+      background: rgba(255, 149, 0, 0.1);
+      border: 1px solid rgba(255, 149, 0, 0.25);
+      border-radius: 6px;
+      line-height: 1.4;
+    }
   </style>
 </head>
 <body>
@@ -227,6 +280,34 @@
             <input type="text" id="channelUrl" class="form-input" placeholder="例如: Rco57HU-claude-update 或完整 URL">
           </div>
           <button id="addChannelBtn" class="add-btn">添加频道</button>
+        </div>
+      </div>
+
+      <!-- 接入教程 -->
+      <div class="section">
+        <div class="section-title">Claude 通知接入教程</div>
+        <div class="tutorial-group">
+          <div class="tutorial-block">
+            <div class="tutorial-block-title">第 0 步：先添加频道</div>
+            <div class="tutorial-block-text">先在上方“添加频道”中填写频道地址（topic 或完整 URL）。下面示例里的变量需要和频道地址一致。</div>
+            <div class="tutorial-code">export NTFY_CHANNEL="你的频道地址或 topic"</div>
+          </div>
+
+          <div class="tutorial-block">
+            <div class="tutorial-block-title">路径 A（推荐）：Claude Code</div>
+            <div class="tutorial-block-text">在 Claude 任务结束时发送通知。将 NTFY_CHANNEL 设成你的频道地址或 topic。</div>
+            <div class="tutorial-code">curl -d "任务完成" https://ntfy.sh/$NTFY_CHANNEL</div>
+          </div>
+
+          <div class="tutorial-block">
+            <div class="tutorial-block-title">路径 B（通用）：不使用 Claude Code 也可以</div>
+            <div class="tutorial-block-text">任何终端、脚本、自动化工具都可以发通知，不依赖 Claude Code / tmux / kitty。</div>
+            <div class="tutorial-code">curl -H "Title: Noty Test" -H "Tags: white_check_mark" -d "Hello from script" https://ntfy.sh/$NTFY_CHANNEL</div>
+          </div>
+
+          <div class="tutorial-note">
+            tmux/kitty 仅影响“点击通知后跳转终端上下文”的增强能力。即使没有 tmux 或 kitty，你仍然可以正常接收通知。
+          </div>
         </div>
       </div>
 

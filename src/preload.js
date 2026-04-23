@@ -30,5 +30,9 @@ contextBridge.exposeInMainWorld('api', {
   // 监听窗口显示事件
   onWindowShown: (callback) => {
     ipcRenderer.on('window-shown', () => callback());
+  },
+
+  onNotificationJumped: (callback) => {
+    ipcRenderer.on('notification-jumped', (event, id) => callback(id));
   }
 });

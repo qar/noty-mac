@@ -62,7 +62,13 @@ function normalizeTmuxMetadata(data) {
   }
 
   const tmuxMetadata = { target };
-  if (session) tmuxMetadata.session = session;
+  if (session) {
+    tmuxMetadata.session = session;
+  } else {
+    // 从 target 中解析 session 名称（格式: session:window.pane）
+    const sessionMatch = target.match(/^([^:.]+)/);
+    if (sessionMatch) tmuxMetadata.session = sessionMatch[1];
+  }
   if (window !== null) tmuxMetadata.window = window;
   if (pane !== null) tmuxMetadata.pane = pane;
 
@@ -221,21 +227,17 @@ class NtfyClient extends EventEmitter {
 
     // 显示系统通知
     const settings = store.get('settings');
-    if (settings.soundEnabled) {
-      const systemNotification = new Notification({
-        title: notification.title,
-        body: notification.message,
-        silent: false
-      });
-      systemNotification.show();
-    } else {
-      const systemNotification = new Notification({
-        title: notification.title,
-        body: notification.message,
-        silent: true
-      });
-      systemNotification.show();
-    }
+    const systemNotification = new Notification({
+      title: notification.title,
+      body: notification.message,
+      silent: !settings.soundEnabled
+    });
+
+    systemNotification.on('click', () => {
+      this.emit('notification-clicked', notification);
+    });
+
+    systemNotification.show();
 
     // 触发事件
     this.emit('notification', notification);

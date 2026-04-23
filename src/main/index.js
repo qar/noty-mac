@@ -35,6 +35,11 @@ function extractTmuxTargetFromMessage(message) {
   return match ? match[1] : null;
 }
 
+function resolveNotificationTmuxTarget(notification) {
+  return notification?.metadata?.tmux?.target
+    || extractTmuxTargetFromMessage(notification?.message || '');
+}
+
 function execTmux(args) {
   const candidates = ['tmux', '/opt/homebrew/bin/tmux', '/usr/local/bin/tmux', '/usr/bin/tmux'];
 
@@ -218,6 +223,32 @@ app.whenReady().then(() => {
     }
   });
 
+  ntfyClient.on('notification-clicked', async (notification) => {
+    const target = resolveNotificationTmuxTarget(notification);
+
+    if (!target) {
+      return;
+    }
+
+    const chainTestApp = notification?.metadata?.chainTestApp || null;
+    const result = await jumpToTmuxTarget(target, { chainTestApp });
+
+    if (result.success) {
+      const notifications = store.get('notifications');
+      const item = notifications.find(n => n.id === notification.id);
+      if (item && !item.read) {
+        item.read = true;
+        store.set('notifications', notifications);
+        updateTrayIcon();
+      }
+
+      const window = getWindow();
+      if (window) {
+        window.webContents.send('notification-jumped', notification.id);
+      }
+    }
+  });
+
   // 订阅所有频道
   ntfyClient.subscribeToAllChannels();
 });
@@ -341,8 +372,7 @@ function setupIPC() {
   ipcMain.handle('jump-to-notification-target', async (event, id, options = {}) => {
     const notifications = store.get('notifications');
     const notification = notifications.find(n => n.id === id);
-    const target = notification?.metadata?.tmux?.target
-      || extractTmuxTargetFromMessage(notification?.message || '');
+    const target = resolveNotificationTmuxTarget(notification);
 
     if (!target) {
       return { success: false, reason: 'no_target' };

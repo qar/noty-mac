@@ -5,9 +5,9 @@
     "output": "release"
   },
   "files": [
-    "dist/**/*",
-    "dist-electron/**/*",
-    "assets/**/*"
+    "src/**/*",
+    "assets/**/*",
+    "package.json"
   ],
   "mac": {
     "target": ["dmg"],

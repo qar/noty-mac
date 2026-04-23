@@ -52,14 +52,21 @@ function renderNotifications() {
     const channelName = channel ? channel.name : '未知频道';
     const time = formatTime(notification.timestamp);
     const readClass = notification.read ? 'read' : '';
+    const sessionTitle = notification.metadata?.tmux?.session || null;
+    const cleanMsg = cleanMessage(notification.message);
+
+    const titleHtml = sessionTitle
+      ? `<div class="notification-session-title">${escapeHtml(sessionTitle)}</div>`
+      : '';
 
     return `
       <div class="notification-item ${readClass}" data-id="${notification.id}">
         <div class="notification-header">
-          <div class="notification-title">${escapeHtml(notification.title)}</div>
+          <div class="notification-type">${escapeHtml(notification.title)}</div>
           <div class="notification-time">${time}</div>
         </div>
-        <div class="notification-message">${escapeHtml(notification.message)}</div>
+        ${titleHtml}
+        <div class="notification-message">${escapeHtml(cleanMsg)}</div>
         <div class="notification-channel">📢 ${escapeHtml(channelName)}</div>
       </div>
     `;
@@ -125,8 +132,15 @@ function setupEventListeners() {
     renderNotifications();
   });
 
-  // 窗口每次显示时刷新数据
+  // 监听窗口每次显示时刷新数据
   window.api.onWindowShown(async () => {
+    await loadData();
+    renderNotifications();
+  });
+
+  // 监听系统通知点击后跳转成功事件
+  window.api.onNotificationJumped(async (id) => {
+    notifications = await window.api.markAsRead(id);
     await loadData();
     renderNotifications();
   });
@@ -163,6 +177,18 @@ function formatTime(timestamp) {
 
   // 显示日期
   return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+// 清理消息：去除 tmux 行
+function cleanMessage(message) {
+  return message
+    .split('\n')
+    .filter(line => {
+      if (/^\s*(?:🖥\s*)?tmux\s*:/i.test(line)) return false;
+      return true;
+    })
+    .join('\n')
+    .trim();
 }
 
 // HTML 转义

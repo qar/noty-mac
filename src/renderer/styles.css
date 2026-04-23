@@ -100,11 +100,24 @@ body {
   margin-bottom: 6px;
 }
 
-.notification-title {
+.notification-type {
   font-weight: 600;
-  color: #333;
-  font-size: 14px;
-  flex: 1;
+  color: #fff;
+  background: #007aff;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.notification-session-title {
+  font-size: 12px;
+  color: #2d8a4e;
+  background: rgba(45, 138, 78, 0.1);
+  padding: 3px 8px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+  font-weight: 500;
 }
 
 .notification-time {
