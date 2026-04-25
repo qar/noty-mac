@@ -34,5 +34,14 @@ contextBridge.exposeInMainWorld('api', {
 
   onNotificationJumped: (callback) => {
     ipcRenderer.on('notification-jumped', (event, id) => callback(id));
+  },
+
+  // 更新相关
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  checkForUpdate: () => ipcRenderer.invoke('check-for-update'),
+  downloadUpdate: () => ipcRenderer.invoke('download-update'),
+  applyUpdate: () => ipcRenderer.invoke('apply-update'),
+  onUpdateDownloadProgress: (callback) => {
+    ipcRenderer.on('update-download-progress', (event, progress) => callback(progress));
   }
 });

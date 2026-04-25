@@ -4,6 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const store = require('./store');
 const NtfyClient = require('./ntfy-client');
+const Updater = require('./updater');
 const { toggleWindow, getWindow } = require('./window');
 
 function generateId() {
@@ -198,6 +199,7 @@ async function jumpToTmuxTarget(target, options = {}) {
 let tray = null;
 let ntfyClient = null;
 let settingsWindow = null;
+let updater = null;
 
 // 防止应用退出
 app.on('window-all-closed', (e) => {
@@ -208,6 +210,9 @@ app.whenReady().then(() => {
   createTray();
   setupIPC();
   updateTrayIcon();
+
+  updater = new Updater();
+  updater.cleanupStagingDir();
 
   // 初始化 ntfy 客户端
   ntfyClient = new NtfyClient();
@@ -455,5 +460,29 @@ function setupIPC() {
   // 打开设置
   ipcMain.on('open-settings', () => {
     openSettingsWindow();
+  });
+
+  // 获取应用版本
+  ipcMain.handle('get-app-version', () => {
+    return app.getVersion();
+  });
+
+  // 检查更新
+  ipcMain.handle('check-for-update', async () => {
+    return updater.checkForUpdate();
+  });
+
+  // 下载更新
+  ipcMain.handle('download-update', async () => {
+    return updater.downloadUpdate((progress) => {
+      if (settingsWindow) {
+        settingsWindow.webContents.send('update-download-progress', progress);
+      }
+    });
+  });
+
+  // 应用更新
+  ipcMain.handle('apply-update', () => {
+    return updater.applyUpdate();
   });
 }

@@ -329,6 +329,29 @@
           </div>
         </div>
       </div>
+
+      <!-- 关于与更新 -->
+      <div class="section">
+        <div class="section-title">关于</div>
+        <div class="settings-group">
+          <div class="setting-item">
+            <div class="setting-label">当前版本</div>
+            <div id="currentVersion" style="font-size: 14px; color: #666;">--</div>
+          </div>
+          <div class="setting-item" style="flex-direction: column; align-items: stretch;">
+            <div id="updateStatus" style="font-size: 13px; color: #666; min-height: 20px;"></div>
+            <button id="checkUpdateBtn" class="add-btn" style="background: #007AFF; margin-top: 8px;">检查更新</button>
+            <button id="downloadUpdateBtn" class="add-btn" style="background: #34C759; display: none; margin-top: 8px;">下载更新</button>
+            <div id="updateProgress" style="display: none; margin-top: 8px;">
+              <div style="background: #e0e0e0; border-radius: 4px; height: 6px; overflow: hidden;">
+                <div id="updateProgressBar" style="background: #007AFF; height: 100%; width: 0%; transition: width 0.3s;"></div>
+              </div>
+              <div id="updateProgressText" style="font-size: 12px; color: #999; margin-top: 4px; text-align: center;">0%</div>
+            </div>
+            <button id="applyUpdateBtn" class="add-btn" style="background: #FF9500; display: none; margin-top: 8px;">安装并重启</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
