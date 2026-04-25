@@ -62,11 +62,10 @@ function normalizeTmuxMetadata(data) {
   }
 
   const tmuxMetadata = { target };
-  if (session) {
+  if (session && !session.startsWith('%')) {
     tmuxMetadata.session = session;
   } else {
-    // 从 target 中解析 session 名称（格式: session:window.pane）
-    const sessionMatch = target.match(/^([^:.]+)/);
+    const sessionMatch = target.match(/^([^:.%]+)/);
     if (sessionMatch) tmuxMetadata.session = sessionMatch[1];
   }
   if (window !== null) tmuxMetadata.window = window;
@@ -94,17 +93,35 @@ function normalizeChainTestApp(data) {
   return null;
 }
 
+function extractProjectFromMessage(message) {
+  if (typeof message !== 'string') return null;
+
+  const line = message.split('\n').find(l => /^\s*📂\s/.test(l));
+  if (!line) return null;
+
+  const match = line.match(/^\s*📂\s+([^\s(]+)(?:\s*\(([^)]+)\))?\s*$/);
+  if (!match) return null;
+
+  const project = { name: match[1] };
+  if (match[2]) project.branch = match[2];
+  return project;
+}
+
 function normalizeNotificationMetadata(data) {
   const tmux = normalizeTmuxMetadata(data);
   const chainTestApp = normalizeChainTestApp(data);
+  const project = extractProjectFromMessage(data.message);
 
-  if (!tmux && !chainTestApp) {
+  if (!tmux && !chainTestApp && !project) {
     return null;
   }
 
   const metadata = {};
   if (tmux) {
     metadata.tmux = tmux;
+  }
+  if (project) {
+    metadata.project = project;
   }
   if (chainTestApp) {
     metadata.chainTestApp = chainTestApp;

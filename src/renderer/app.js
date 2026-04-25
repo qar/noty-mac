@@ -47,27 +47,43 @@ function renderNotifications() {
     return;
   }
 
+  const singleChannel = Object.keys(channels).length <= 1;
+
   listEl.innerHTML = displayNotifications.map(notification => {
     const channel = channels[notification.channelId];
     const channelName = channel ? channel.name : '未知频道';
     const time = formatTime(notification.timestamp);
     const readClass = notification.read ? 'read' : '';
-    const sessionTitle = notification.metadata?.tmux?.session || null;
     const cleanMsg = cleanMessage(notification.message);
+    const displayTitle = cleanTitle(notification.title);
 
-    const titleHtml = sessionTitle
-      ? `<div class="notification-session-title">${escapeHtml(sessionTitle)}</div>`
+    const project = notification.metadata?.project;
+    const sessionLabel = project
+      ? (project.branch ? `${project.name} (${project.branch})` : project.name)
+      : null;
+
+    const hasTmux = !!notification.metadata?.tmux?.target
+      || /^\s*(?:🖥\s*)?tmux\s*:\s*[A-Za-z0-9_.:%@+/-]+\s*$/im.test(notification?.message || '');
+
+    const sessionHtml = sessionLabel
+      ? `<div class="notification-session-title">${escapeHtml(sessionLabel)}</div>`
       : '';
+
+    const channelHtml = singleChannel
+      ? ''
+      : `<div class="notification-channel">📢 ${escapeHtml(channelName)}</div>`;
+
+    const jumpIndicator = hasTmux ? ' <span class="jump-indicator">↗</span>' : '';
 
     return `
       <div class="notification-item ${readClass}" data-id="${notification.id}">
         <div class="notification-header">
-          <div class="notification-type">${escapeHtml(notification.title)}</div>
+          <div class="notification-type">${escapeHtml(displayTitle)}${jumpIndicator}</div>
           <div class="notification-time">${time}</div>
         </div>
-        ${titleHtml}
+        ${sessionHtml}
         <div class="notification-message">${escapeHtml(cleanMsg)}</div>
-        <div class="notification-channel">📢 ${escapeHtml(channelName)}</div>
+        ${channelHtml}
       </div>
     `;
   }).join('');
@@ -185,10 +201,15 @@ function cleanMessage(message) {
     .split('\n')
     .filter(line => {
       if (/^\s*(?:🖥\s*)?tmux\s*:/i.test(line)) return false;
+      if (/^\s*📂\s/.test(line)) return false;
       return true;
     })
     .join('\n')
     .trim();
+}
+
+function cleanTitle(title) {
+  return title.replace(/\s*\([^)]*\)\s*$/, '');
 }
 
 // HTML 转义
