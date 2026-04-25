@@ -177,10 +177,7 @@ async function jumpToTmuxTarget(target, options = {}) {
       }
     }
 
-    const kittyResult = await focusApp('Kitty');
-    if (!kittyResult.success) {
-      return { success: false, reason: kittyResult.reason };
-    }
+    await focusApp('Kitty');
 
     await execTmux(['switch-client', '-c', client.name, '-t', session]);
     await execTmux(['select-window', '-t', windowTarget]);
