@@ -1,6 +1,6 @@
 {
   "name": "noty-mac",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "macOS 菜单栏应用，用于显示 ntfy.sh 通知",
   "main": "src/main/index.js",
   "scripts": {

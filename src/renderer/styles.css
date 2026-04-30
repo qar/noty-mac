@@ -146,6 +146,17 @@ body {
   margin-left: 4px;
 }
 
+.notification-count {
+  font-size: 10px;
+  font-weight: 600;
+  margin-left: 4px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+  letter-spacing: 0.2px;
+}
+
 .empty-state {
   text-align: center;
   padding: 60px 20px;

@@ -363,6 +363,24 @@ function setupIPC() {
     return notifications;
   });
 
+  // 批量标记已读
+  ipcMain.handle('mark-many-as-read', (event, ids) => {
+    const notifications = store.get('notifications');
+    const idSet = new Set(Array.isArray(ids) ? ids : []);
+    let changed = false;
+    notifications.forEach(n => {
+      if (idSet.has(n.id) && !n.read) {
+        n.read = true;
+        changed = true;
+      }
+    });
+    if (changed) {
+      store.set('notifications', notifications);
+      updateTrayIcon();
+    }
+    return notifications;
+  });
+
   // 清空已读
   ipcMain.handle('clear-read', () => {
     const notifications = store.get('notifications').filter(n => !n.read);

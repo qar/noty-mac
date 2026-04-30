@@ -244,9 +244,21 @@ class NtfyClient extends EventEmitter {
 
     // 显示系统通知
     const settings = store.get('settings');
+    const cleanTitle = notification.title.replace(/\s*\([^)]*\)\s*$/, '');
+    const project = metadata?.project;
+    const projectLabel = project
+      ? (project.branch ? `${project.name} (${project.branch})` : project.name)
+      : null;
+    const cleanBody = notification.message
+      .split('\n')
+      .filter(line => !/^\s*(?:🖥\s*)?tmux\s*:/i.test(line) && !/^\s*📂\s/.test(line))
+      .join('\n')
+      .trim();
+
     const systemNotification = new Notification({
-      title: notification.title,
-      body: notification.message,
+      title: cleanTitle,
+      subtitle: projectLabel || undefined,
+      body: cleanBody || notification.message,
       silent: !settings.soundEnabled
     });
 

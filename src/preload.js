@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('api', {
   // 通知相关
   getNotifications: () => ipcRenderer.invoke('get-notifications'),
   markAsRead: (id) => ipcRenderer.invoke('mark-as-read', id),
+  markManyAsRead: (ids) => ipcRenderer.invoke('mark-many-as-read', ids),
   markAllAsRead: () => ipcRenderer.invoke('mark-all-as-read'),
   jumpToNotificationTarget: (id, options) => ipcRenderer.invoke('jump-to-notification-target', id, options),
   clearRead: () => ipcRenderer.invoke('clear-read'),

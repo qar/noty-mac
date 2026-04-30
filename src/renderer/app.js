@@ -48,22 +48,26 @@ function renderNotifications() {
   }
 
   const singleChannel = Object.keys(channels).length <= 1;
+  const groups = groupByPane(displayNotifications);
 
-  listEl.innerHTML = displayNotifications.map(notification => {
-    const channel = channels[notification.channelId];
+  listEl.innerHTML = groups.map(group => {
+    const head = group.items[0];
+    const count = group.items.length;
+    const channel = channels[head.channelId];
     const channelName = channel ? channel.name : '未知频道';
-    const time = formatTime(notification.timestamp);
-    const readClass = notification.read ? 'read' : '';
-    const cleanMsg = cleanMessage(notification.message);
-    const displayTitle = cleanTitle(notification.title);
+    const time = formatTime(head.timestamp);
+    const allRead = group.items.every(n => n.read);
+    const readClass = allRead ? 'read' : '';
+    const cleanMsg = cleanMessage(head.message);
+    const displayTitle = cleanTitle(head.title);
 
-    const project = notification.metadata?.project;
+    const project = head.metadata?.project;
     const sessionLabel = project
       ? (project.branch ? `${project.name} (${project.branch})` : project.name)
       : null;
 
-    const hasTmux = !!notification.metadata?.tmux?.target
-      || /^\s*(?:🖥\s*)?tmux\s*:\s*[A-Za-z0-9_.:%@+/-]+\s*$/im.test(notification?.message || '');
+    const hasTmux = !!head.metadata?.tmux?.target
+      || /^\s*(?:🖥\s*)?tmux\s*:\s*[A-Za-z0-9_.:%@+/-]+\s*$/im.test(head?.message || '');
 
     const sessionHtml = sessionLabel
       ? `<div class="notification-session-title">${escapeHtml(sessionLabel)}</div>`
@@ -74,11 +78,16 @@ function renderNotifications() {
       : `<div class="notification-channel">📢 ${escapeHtml(channelName)}</div>`;
 
     const jumpIndicator = hasTmux ? ' <span class="jump-indicator">↗</span>' : '';
+    const countBadge = count > 1
+      ? ` <span class="notification-count" title="${count} 条来自同一 pane 的消息">×${count}</span>`
+      : '';
+
+    const groupIds = group.items.map(n => n.id).join(',');
 
     return `
-      <div class="notification-item ${readClass}" data-id="${notification.id}">
+      <div class="notification-item ${readClass}" data-id="${head.id}" data-ids="${groupIds}">
         <div class="notification-header">
-          <div class="notification-type">${escapeHtml(displayTitle)}${jumpIndicator}</div>
+          <div class="notification-type">${escapeHtml(displayTitle)}${jumpIndicator}${countBadge}</div>
           <div class="notification-time">${time}</div>
         </div>
         ${sessionHtml}
@@ -92,6 +101,7 @@ function renderNotifications() {
   listEl.querySelectorAll('.notification-item').forEach(item => {
     item.addEventListener('click', async () => {
       const id = item.dataset.id;
+      const ids = (item.dataset.ids || id).split(',').filter(Boolean);
       const notification = notifications.find(n => n.id === id);
       const hasTmuxTarget = !!notification?.metadata?.tmux?.target;
       const hasTmuxLine = /^\s*(?:🖥\s*)?tmux\s*:\s*([A-Za-z0-9_.:%@+/-]+)\s*$/im.test(notification?.message || '');
@@ -111,11 +121,28 @@ function renderNotifications() {
         }
       }
 
-      notifications = await window.api.markAsRead(id);
+      notifications = ids.length > 1
+        ? await window.api.markManyAsRead(ids)
+        : await window.api.markAsRead(id);
       await loadData();
       renderNotifications();
     });
   });
+}
+
+// 将相邻的、来自同一 tmux pane 的通知聚合成一组
+function groupByPane(items) {
+  const groups = [];
+  for (const item of items) {
+    const target = item.metadata?.tmux?.target || null;
+    const last = groups[groups.length - 1];
+    if (target && last && last.target === target) {
+      last.items.push(item);
+    } else {
+      groups.push({ target, items: [item] });
+    }
+  }
+  return groups;
 }
 
 // 设置事件监听
