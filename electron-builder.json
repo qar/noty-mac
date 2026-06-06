@@ -13,6 +13,7 @@
     "target": ["dmg"],
     "category": "public.app-category.utilities",
     "icon": "assets/icon.png",
+    "hardenedRuntime": false,
     "extendInfo": {
       "NSAppleEventsUsageDescription": "Noty 需要发送 Apple Events 来激活终端（Kitty/Calendar/Safari 等）以完成通知跳转。"
     }
