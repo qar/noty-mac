@@ -112,6 +112,39 @@ async function focusApp(appName) {
   return { success: true };
 }
 
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Bring an app to the foreground using LaunchServices only (`open -a`).
+// Unlike `tell application ... to activate`, this does NOT send Apple Events,
+// so it never depends on the TCC Automation grant — which, for an ad-hoc signed
+// app, is keyed to the binary's cdhash and silently resets on every rebuild or
+// asar self-update. Keeping terminal focus off Apple Events is what stops the
+// "click-to-jump periodically stops working" cycle.
+async function raiseApp(appName) {
+  try {
+    await execOpen(['-a', appName]);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+// Poll for a kitty tmux client to appear (e.g. right after launching kitty,
+// while the user's shell auto-attaches tmux). Returns the client or null.
+async function waitForKittyClient(targetSession, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await delay(200);
+    const client = pickTmuxClient(await listTmuxClients(), targetSession);
+    if (client) {
+      return client;
+    }
+  }
+  return null;
+}
+
 async function listTmuxClients() {
   try {
     const output = await execTmux(['list-clients', '-F', '#{client_name}\t#{session_name}\t#{client_termname}\t#{client_activity}']);
@@ -162,13 +195,9 @@ async function jumpToTmuxTarget(target, options = {}) {
   try {
     const session = await execTmux(['display-message', '-p', '-t', target, '#S']);
     const windowTarget = await execTmux(['display-message', '-p', '-t', target, '#S:#I']);
-    const clients = await listTmuxClients();
-    const client = pickTmuxClient(clients, session);
 
-    if (!client) {
-      return { success: false, reason: 'no_attached_client' };
-    }
-
+    // Optional chain-test app (test harness only, opt-in via NTFY_CHAIN_TEST_APP).
+    // This path intentionally exercises the Apple Events activation chain.
     if (chainTestApp) {
       const testAppName = chainTestApp === 'calendar' ? 'Calendar' : 'Safari';
       const testAppResult = await focusApp(testAppName);
@@ -177,7 +206,22 @@ async function jumpToTmuxTarget(target, options = {}) {
       }
     }
 
-    await focusApp('Kitty');
+    // Bring the terminal to the front via LaunchServices only — no Apple Events,
+    // so the jump never depends on the TCC Automation grant. This also launches
+    // kitty if it isn't running, giving its shell a chance to auto-attach tmux.
+    await raiseApp('kitty');
+
+    let client = pickTmuxClient(await listTmuxClients(), session);
+
+    // Fallback: no kitty client attached yet (all detached, or kitty was just
+    // launched above). Wait briefly for one to attach, then switch it over.
+    if (!client) {
+      client = await waitForKittyClient(session, 1500);
+    }
+
+    if (!client) {
+      return { success: false, reason: 'no_attached_client' };
+    }
 
     await execTmux(['switch-client', '-c', client.name, '-t', session]);
     await execTmux(['select-window', '-t', windowTarget]);
