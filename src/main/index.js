@@ -1,9 +1,11 @@
-const { app, Tray, Menu, ipcMain, nativeImage, BrowserWindow } = require('electron');
+const { app, Tray, Menu, ipcMain, nativeImage, BrowserWindow, shell } = require('electron');
 const { execFile } = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
 const store = require('./store');
 const NtfyClient = require('./ntfy-client');
+const PlaneClient = require('./plane-client');
+const { encryptApiKey } = PlaneClient;
 const Updater = require('./updater');
 const { toggleWindow, getWindow } = require('./window');
 
@@ -39,6 +41,32 @@ function extractTmuxTargetFromMessage(message) {
 function resolveNotificationTmuxTarget(notification) {
   return notification?.metadata?.tmux?.target
     || extractTmuxTargetFromMessage(notification?.message || '');
+}
+
+function resolveNotificationPlaneUrl(notification) {
+  return notification?.metadata?.plane?.url || null;
+}
+
+// 仅放行 http/https，避免 openExternal 被滥用打开任意协议
+async function openExternalUrl(url) {
+  if (typeof url !== 'string') {
+    return { success: false, reason: 'invalid_url' };
+  }
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch (e) {
+    return { success: false, reason: 'invalid_url' };
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return { success: false, reason: 'unsupported_scheme' };
+  }
+  try {
+    await shell.openExternal(url);
+    return { success: true };
+  } catch (e) {
+    return { success: false, reason: e.message || 'open_failed' };
+  }
 }
 
 function execTmux(args) {
@@ -239,8 +267,21 @@ async function jumpToTmuxTarget(target, options = {}) {
 
 let tray = null;
 let ntfyClient = null;
+let planeClient = null;
 let settingsWindow = null;
 let updater = null;
+
+// 根据 planeConfig 启停轮询：开启且必填项齐全才运行
+function reconcilePlane() {
+  if (!planeClient) return;
+  const cfg = store.get('planeConfig');
+  const ready = cfg.enabled && cfg.baseUrl && cfg.workspaceSlug && cfg.email && cfg.apiKeyEnc;
+  if (ready) {
+    planeClient.start();
+  } else {
+    planeClient.stop();
+  }
+}
 
 // 防止应用退出
 app.on('window-all-closed', (e) => {
@@ -297,6 +338,39 @@ app.whenReady().then(() => {
 
   // 订阅所有频道
   ntfyClient.subscribeToAllChannels();
+
+  // 初始化 Plane 客户端，复用与 ntfy 相同的通知路径
+  planeClient = new PlaneClient();
+
+  planeClient.on('notification', (notification) => {
+    updateTrayIcon();
+    const window = getWindow();
+    if (window) {
+      window.webContents.send('new-notification', notification);
+    }
+  });
+
+  planeClient.on('notification-clicked', async (notification) => {
+    const url = resolveNotificationPlaneUrl(notification);
+    if (!url) return;
+
+    const result = await openExternalUrl(url);
+    if (result.success) {
+      const notifications = store.get('notifications');
+      const item = notifications.find(n => n.id === notification.id);
+      if (item && !item.read) {
+        item.read = true;
+        store.set('notifications', notifications);
+        updateTrayIcon();
+      }
+      const window = getWindow();
+      if (window) {
+        window.webContents.send('notification-jumped', notification.id);
+      }
+    }
+  });
+
+  reconcilePlane();
 });
 
 function loadTrayTemplateImage() {
@@ -432,10 +506,16 @@ function setupIPC() {
     return notifications;
   });
 
-  // 根据通知跳转 tmux 目标
+  // 根据通知跳转目标：Plane 通知打开浏览器，tmux 通知跳转终端
   ipcMain.handle('jump-to-notification-target', async (event, id, options = {}) => {
     const notifications = store.get('notifications');
     const notification = notifications.find(n => n.id === id);
+
+    const planeUrl = resolveNotificationPlaneUrl(notification);
+    if (planeUrl) {
+      return openExternalUrl(planeUrl);
+    }
+
     const target = resolveNotificationTmuxTarget(notification);
 
     if (!target) {
@@ -447,6 +527,11 @@ function setupIPC() {
       || null;
 
     return jumpToTmuxTarget(target, { chainTestApp });
+  });
+
+  // 打开外部链接（仅 http/https）
+  ipcMain.handle('open-external', async (event, url) => {
+    return openExternalUrl(url);
   });
 
   // 获取频道列表
@@ -503,6 +588,68 @@ function setupIPC() {
   ipcMain.handle('update-settings', (event, settings) => {
     store.set('settings', settings);
     return settings;
+  });
+
+  // 获取 Plane 配置（不泄露原始 key，用 hasApiKey 表示是否已保存）
+  ipcMain.handle('get-plane-config', () => {
+    const cfg = store.get('planeConfig');
+    return {
+      enabled: cfg.enabled,
+      baseUrl: cfg.baseUrl,
+      workspaceSlug: cfg.workspaceSlug,
+      email: cfg.email,
+      pollIntervalMs: cfg.pollIntervalMs,
+      resolvedUserId: cfg.resolvedUserId,
+      hasApiKey: !!cfg.apiKeyEnc
+    };
+  });
+
+  // 保存 Plane 配置（apiKey 留空表示不修改已存密钥）
+  ipcMain.handle('save-plane-config', (event, input = {}) => {
+    const cfg = store.get('planeConfig');
+    const next = {
+      ...cfg,
+      enabled: !!input.enabled,
+      baseUrl: (input.baseUrl || '').trim(),
+      workspaceSlug: (input.workspaceSlug || '').trim(),
+      email: (input.email || '').trim()
+    };
+
+    // 身份相关字段变更则清除缓存的 userId，下轮重新解析
+    if (next.baseUrl !== cfg.baseUrl || next.workspaceSlug !== cfg.workspaceSlug || next.email !== cfg.email) {
+      next.resolvedUserId = '';
+    }
+
+    // 仅当传入非空 apiKey 时才更新密钥
+    if (typeof input.apiKey === 'string' && input.apiKey.trim()) {
+      try {
+        next.apiKeyEnc = encryptApiKey(input.apiKey.trim());
+      } catch (e) {
+        return { success: false, error: e.message || 'encrypt_failed' };
+      }
+    }
+
+    store.set('planeConfig', next);
+    reconcilePlane();
+
+    return { success: true, hasApiKey: !!next.apiKeyEnc };
+  });
+
+  // 测试 Plane 连接并解析身份
+  ipcMain.handle('test-plane-connection', async (event, input = {}) => {
+    const cfg = store.get('planeConfig');
+    const testCfg = {
+      ...cfg,
+      baseUrl: (input.baseUrl || cfg.baseUrl || '').trim(),
+      workspaceSlug: (input.workspaceSlug || cfg.workspaceSlug || '').trim(),
+      email: (input.email || cfg.email || '').trim()
+    };
+    const apiKeyPlain = typeof input.apiKey === 'string' && input.apiKey.trim()
+      ? input.apiKey.trim()
+      : null;
+
+    const client = planeClient || new PlaneClient();
+    return client.testConnection(testCfg, apiKeyPlain);
   });
 
   // 关闭窗口

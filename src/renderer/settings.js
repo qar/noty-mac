@@ -1,11 +1,13 @@
 let channels = [];
 let settings = {};
+let planeConfig = {};
 
 // 初始化
 async function init() {
   await loadData();
   renderChannels();
   updateToggles();
+  renderPlaneConfig();
   setupEventListeners();
   await loadVersionInfo();
 }
@@ -14,6 +16,7 @@ async function init() {
 async function loadData() {
   channels = await window.api.getChannels();
   settings = await window.api.getSettings();
+  planeConfig = await window.api.getPlaneConfig();
 }
 
 // 渲染频道列表
@@ -67,6 +70,50 @@ function updateToggles() {
   }
 }
 
+// 渲染 Plane 配置
+function renderPlaneConfig() {
+  const enabledToggle = document.getElementById('planeEnabledToggle');
+  if (planeConfig.enabled) {
+    enabledToggle.classList.add('active');
+  } else {
+    enabledToggle.classList.remove('active');
+  }
+
+  document.getElementById('planeBaseUrl').value = planeConfig.baseUrl || '';
+  document.getElementById('planeWorkspaceSlug').value = planeConfig.workspaceSlug || '';
+  document.getElementById('planeEmail').value = planeConfig.email || '';
+
+  const apiKeyInput = document.getElementById('planeApiKey');
+  apiKeyInput.value = '';
+  // 已保存密钥时用掩码占位，留空表示不修改
+  apiKeyInput.placeholder = planeConfig.hasApiKey ? '••••••••（已保存，留空则不修改）' : '输入 API Key';
+}
+
+function readPlaneForm() {
+  return {
+    enabled: document.getElementById('planeEnabledToggle').classList.contains('active'),
+    baseUrl: document.getElementById('planeBaseUrl').value.trim(),
+    workspaceSlug: document.getElementById('planeWorkspaceSlug').value.trim(),
+    email: document.getElementById('planeEmail').value.trim(),
+    apiKey: document.getElementById('planeApiKey').value.trim()
+  };
+}
+
+const PLANE_ERROR_TEXT = {
+  no_api_key: '请填写 API Key',
+  missing_fields: '请填写服务地址、工作区标识和邮箱',
+  email_not_found: '邮箱未匹配到工作区成员，请检查邮箱或 API Key 权限',
+  auth_failed: 'API Key 无效或无权限',
+  network_error: '无法连接到服务，请检查地址',
+  encrypt_failed: '系统加密不可用，无法安全保存密钥'
+};
+
+function setPlaneStatus(text, color) {
+  const el = document.getElementById('planeStatus');
+  el.textContent = text;
+  el.style.color = color || '#666';
+}
+
 // 设置事件监听
 function setupEventListeners() {
   // 关闭按钮
@@ -107,6 +154,49 @@ function setupEventListeners() {
     settings.hideRead = !settings.hideRead;
     await window.api.updateSettings(settings);
     updateToggles();
+  });
+
+  // Plane 开关（仅切换 UI 态，保存时才持久化）
+  document.getElementById('planeEnabledToggle').addEventListener('click', () => {
+    document.getElementById('planeEnabledToggle').classList.toggle('active');
+  });
+
+  // 测试连接
+  document.getElementById('planeTestBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('planeTestBtn');
+    setPlaneStatus('正在测试连接...', '#666');
+    btn.disabled = true;
+    try {
+      const result = await window.api.testPlaneConnection(readPlaneForm());
+      if (result.success) {
+        setPlaneStatus(`连接成功，已识别成员：${result.memberName || result.userId}`, '#34C759');
+      } else {
+        setPlaneStatus(PLANE_ERROR_TEXT[result.error] || `测试失败：${result.error}`, '#FF3B30');
+      }
+    } catch {
+      setPlaneStatus('测试失败', '#FF3B30');
+    }
+    btn.disabled = false;
+  });
+
+  // 保存
+  document.getElementById('planeSaveBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('planeSaveBtn');
+    setPlaneStatus('正在保存...', '#666');
+    btn.disabled = true;
+    try {
+      const result = await window.api.savePlaneConfig(readPlaneForm());
+      if (result.success) {
+        setPlaneStatus('已保存', '#34C759');
+        planeConfig = await window.api.getPlaneConfig();
+        renderPlaneConfig();
+      } else {
+        setPlaneStatus(PLANE_ERROR_TEXT[result.error] || `保存失败：${result.error}`, '#FF3B30');
+      }
+    } catch {
+      setPlaneStatus('保存失败', '#FF3B30');
+    }
+    btn.disabled = false;
   });
 }
 

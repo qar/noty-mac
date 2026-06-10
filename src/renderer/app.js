@@ -61,25 +61,32 @@ function renderNotifications() {
     const cleanMsg = cleanMessage(head.message);
     const displayTitle = cleanTitle(head.title);
 
+    const plane = head.metadata?.plane;
     const project = head.metadata?.project;
-    const sessionLabel = project
-      ? (project.branch ? `${project.name} (${project.branch})` : project.name)
-      : null;
+    const sessionLabel = plane?.identifier
+      ? plane.identifier
+      : (project
+        ? (project.branch ? `${project.name} (${project.branch})` : project.name)
+        : null);
 
     const hasTmux = !!head.metadata?.tmux?.target
       || /^\s*(?:🖥\s*)?tmux\s*:\s*[A-Za-z0-9_.:%@+/-]+\s*$/im.test(head?.message || '');
+    const hasJump = hasTmux || !!plane?.url;
 
     const sessionHtml = sessionLabel
       ? `<div class="notification-session-title">${escapeHtml(sessionLabel)}</div>`
       : '';
 
-    const channelHtml = singleChannel
-      ? ''
-      : `<div class="notification-channel">📢 ${escapeHtml(channelName)}</div>`;
+    const isPlane = head.channelId === 'plane';
+    const channelHtml = isPlane
+      ? `<div class="notification-channel">📋 Plane</div>`
+      : (singleChannel
+        ? ''
+        : `<div class="notification-channel">📢 ${escapeHtml(channelName)}</div>`);
 
-    const jumpIndicator = hasTmux ? ' <span class="jump-indicator">↗</span>' : '';
+    const jumpIndicator = hasJump ? ' <span class="jump-indicator">↗</span>' : '';
     const countBadge = count > 1
-      ? ` <span class="notification-count" title="${count} 条来自同一 pane 的消息">×${count}</span>`
+      ? ` <span class="notification-count" title="${count} 条同一来源的消息">×${count}</span>`
       : '';
 
     const groupIds = group.items.map(n => n.id).join(',');
@@ -105,8 +112,9 @@ function renderNotifications() {
       const notification = notifications.find(n => n.id === id);
       const hasTmuxTarget = !!notification?.metadata?.tmux?.target;
       const hasTmuxLine = /^\s*(?:🖥\s*)?tmux\s*:\s*([A-Za-z0-9_.:%@+/-]+)\s*$/im.test(notification?.message || '');
+      const hasPlaneUrl = !!notification?.metadata?.plane?.url;
 
-      if (hasTmuxTarget || hasTmuxLine) {
+      if (hasTmuxTarget || hasTmuxLine || hasPlaneUrl) {
         try {
           const chainTestApp = notification?.metadata?.chainTestApp;
           const result = await window.api.jumpToNotificationTarget(
@@ -114,10 +122,10 @@ function renderNotifications() {
             chainTestApp ? { chainTestApp } : undefined
           );
           if (!result?.success) {
-            console.error('Failed to jump tmux target:', result?.reason || 'unknown_error');
+            console.error('Failed to open notification target:', result?.reason || 'unknown_error');
           }
         } catch (error) {
-          console.error('Failed to jump tmux target:', error);
+          console.error('Failed to open notification target:', error);
         }
       }
 
@@ -130,16 +138,27 @@ function renderNotifications() {
   });
 }
 
-// 将相邻的、来自同一 tmux pane 的通知聚合成一组
+// 聚合分组键：tmux 通知按 pane，Plane 通知按 work item id
+function groupKeyOf(item) {
+  if (item.metadata?.tmux?.target) {
+    return `tmux:${item.metadata.tmux.target}`;
+  }
+  if (item.metadata?.plane?.workItemId) {
+    return `plane:${item.metadata.plane.workItemId}`;
+  }
+  return null;
+}
+
+// 将相邻的、同一聚合键（同一 pane 或同一任务）的通知聚合成一组
 function groupByPane(items) {
   const groups = [];
   for (const item of items) {
-    const target = item.metadata?.tmux?.target || null;
+    const key = groupKeyOf(item);
     const last = groups[groups.length - 1];
-    if (target && last && last.target === target) {
+    if (key && last && last.key === key) {
       last.items.push(item);
     } else {
-      groups.push({ target, items: [item] });
+      groups.push({ key, items: [item] });
     }
   }
   return groups;

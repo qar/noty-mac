@@ -19,6 +19,12 @@ contextBridge.exposeInMainWorld('api', {
   getSettings: () => ipcRenderer.invoke('get-settings'),
   updateSettings: (settings) => ipcRenderer.invoke('update-settings', settings),
 
+  // Plane 集成
+  getPlaneConfig: () => ipcRenderer.invoke('get-plane-config'),
+  savePlaneConfig: (config) => ipcRenderer.invoke('save-plane-config', config),
+  testPlaneConnection: (config) => ipcRenderer.invoke('test-plane-connection', config),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+
   // 窗口控制
   closeWindow: () => ipcRenderer.send('close-window'),
   openSettings: () => ipcRenderer.send('open-settings'),

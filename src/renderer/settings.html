@@ -311,6 +311,43 @@
         </div>
       </div>
 
+      <!-- Plane 集成 -->
+      <div class="section">
+        <div class="section-title">Plane 集成</div>
+        <div class="settings-group" style="margin-bottom: 12px;">
+          <div class="setting-item">
+            <div class="setting-label">开启 Plane 任务提醒</div>
+            <div id="planeEnabledToggle" class="toggle">
+              <div class="toggle-thumb"></div>
+            </div>
+          </div>
+        </div>
+        <div class="add-channel-form">
+          <div class="form-group">
+            <label class="form-label">服务地址（自部署 Base URL）</label>
+            <input type="text" id="planeBaseUrl" class="form-input" placeholder="例如: https://plane.example.com">
+          </div>
+          <div class="form-group">
+            <label class="form-label">工作区标识（workspace slug）</label>
+            <input type="text" id="planeWorkspaceSlug" class="form-input" placeholder="例如: my-team">
+          </div>
+          <div class="form-group">
+            <label class="form-label">我的 Plane 账号邮箱</label>
+            <input type="text" id="planeEmail" class="form-input" placeholder="用于识别「与我相关」的任务">
+          </div>
+          <div class="form-group">
+            <label class="form-label">API Key</label>
+            <input type="password" id="planeApiKey" class="form-input" placeholder="输入 API Key" autocomplete="off">
+          </div>
+          <div id="planeStatus" style="font-size: 12px; min-height: 18px; margin-bottom: 10px; color: #666;"></div>
+          <button id="planeTestBtn" class="add-btn" style="background: #007AFF; margin-bottom: 8px;">测试连接</button>
+          <button id="planeSaveBtn" class="add-btn">保存</button>
+        </div>
+        <div class="tutorial-note" style="margin-top: 12px;">
+          API Key 在 Plane「个人设置 → API tokens」中创建。密钥经系统钥匙串加密后本地保存，不会明文存储。开启后每 90 秒轮询一次与你相关的任务变动。
+        </div>
+      </div>
+
       <!-- 偏好设置 -->
       <div class="section">
         <div class="section-title">偏好设置</div>
