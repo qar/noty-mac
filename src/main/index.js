@@ -44,6 +44,15 @@ function resolveNotificationTmuxTarget(notification) {
 function execTmux(args) {
   const candidates = ['tmux', '/opt/homebrew/bin/tmux', '/usr/local/bin/tmux', '/usr/bin/tmux'];
 
+  // Force a UTF-8 locale on the tmux child. When Noty.app is launched by
+  // LaunchServices (menu bar / login item / Dock), its env has no LANG/LC_*,
+  // and tmux falls back to the C locale where `-F` format output sanitizes
+  // non-printable bytes — turning our literal tab separator into '_'. That
+  // collapses each list-clients row into a single field, leaves client_termname
+  // empty, and click-to-jump fails as `no_attached_client`. Dev mode never
+  // shows it because `npm start` inherits the shell's LANG.
+  const tmuxEnv = { ...process.env, LANG: process.env.LANG || 'en_US.UTF-8' };
+
   return new Promise((resolve, reject) => {
     const run = (index) => {
       if (index >= candidates.length) {
@@ -51,7 +60,7 @@ function execTmux(args) {
         return;
       }
 
-      execFile(candidates[index], args, { timeout: 5000 }, (error, stdout, stderr) => {
+      execFile(candidates[index], args, { timeout: 5000, env: tmuxEnv }, (error, stdout, stderr) => {
         if (!error) {
           resolve(stdout?.trim() || '');
           return;
