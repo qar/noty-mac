@@ -197,8 +197,20 @@ async function loadVersionInfo() {
   document.getElementById('applyUpdateBtn').addEventListener('click', async () => {
     const statusEl = document.getElementById('updateStatus');
     statusEl.textContent = '正在安装，即将重启...';
+    statusEl.style.color = '#666';
     try {
-      await window.api.applyUpdate();
+      const result = await window.api.applyUpdate();
+      if (result?.success) {
+        statusEl.textContent = '安装完成，应用即将重启...';
+        statusEl.style.color = '#34C759';
+      } else {
+        const errors = {
+          no_staged_update: '未找到已下载的更新',
+          read_only_volume: '安装位置不可写，请将 Noty 拖到 /Applications 后重试'
+        };
+        statusEl.textContent = errors[result?.error] || `安装失败: ${result?.error || '未知错误'}`;
+        statusEl.style.color = '#FF3B30';
+      }
     } catch {
       statusEl.textContent = '安装失败，请重试';
       statusEl.style.color = '#FF3B30';

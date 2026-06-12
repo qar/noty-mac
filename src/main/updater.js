@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 const { app, net } = require('electron');
-const { spawn } = require('child_process');
 
 const STAGING_DIR_NAME = 'update-staging';
 
@@ -155,9 +154,6 @@ class Updater {
     }
 
     const asarTarget = path.join(process.resourcesPath, 'app.asar');
-    const backupPath = path.join(this.stagingDir, 'app.asar.backup');
-    const appPath = path.resolve(process.resourcesPath, '..', '..');
-    const scriptPath = path.join(this.stagingDir, 'swap.sh');
 
     try {
       fs.accessSync(process.resourcesPath, fs.constants.W_OK);
@@ -165,32 +161,39 @@ class Updater {
       return { success: false, error: 'read_only_volume' };
     }
 
-    fs.copyFileSync(asarTarget, backupPath);
+    // Swap the asar in-process via atomic rename. The current process keeps
+    // running on its already-mmap'd old inode; the new inode lives at the
+    // path and gets picked up on next launch. No detached bash, no race with
+    // launchd reparenting children of a GUI process.
+    try {
+      fs.renameSync(stagedAsar, asarTarget);
+    } catch (renameErr) {
+      // EXDEV (rare: staging and Resources on different volumes) — fall back
+      // to copy + unlink. Slightly less atomic, but the only realistic
+      // failure mode here is partial write, and the next launch would just
+      // re-check via the updater anyway.
+      try {
+        fs.copyFileSync(stagedAsar, asarTarget);
+        fs.unlinkSync(stagedAsar);
+      } catch (copyErr) {
+        return { success: false, error: copyErr.message || renameErr.message || 'swap_failed' };
+      }
+    }
 
-    const script = `#!/bin/bash
-sleep 2
-if cp -f "${stagedAsar}" "${asarTarget}"; then
-  xattr -cr "${asarTarget}" 2>/dev/null
-  rm -f "${stagedAsar}"
-  rm -f "${scriptPath}"
-  open "${appPath}"
-else
-  cp -f "${backupPath}" "${asarTarget}"
-  rm -f "${stagedAsar}"
-  rm -f "${scriptPath}"
-  open "${appPath}"
-fi
-`;
+    try {
+      require('child_process').execFileSync('/usr/bin/xattr', ['-cr', asarTarget], { stdio: 'ignore' });
+    } catch {}
 
-    fs.writeFileSync(scriptPath, script, { mode: 0o755 });
+    // Defer the relaunch one tick so the IPC reply (`{success: true}`) lands
+    // in the renderer before this process exits. Without the deferral, the
+    // renderer's `await ipcRenderer.invoke` rejects with "object destroyed"
+    // and the UI shows "安装失败" even on a successful swap.
+    setTimeout(() => {
+      app.relaunch();
+      app.exit(0);
+    }, 200);
 
-    const child = spawn('/bin/bash', [scriptPath], {
-      detached: true,
-      stdio: 'ignore'
-    });
-    child.unref();
-
-    app.exit(0);
+    return { success: true };
   }
 
   cleanupStagingDir() {
