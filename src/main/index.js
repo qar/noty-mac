@@ -8,6 +8,7 @@ const Updater = require('./updater');
 const { toggleWindow, getWindow } = require('./window');
 const { openMainWindow, hideMainWindow, getMainWindow, destroyMainWindow } = require('./main-window');
 const workspace = require('./workspace');
+const { probeTmux } = require('./tmux-probe');
 
 function generateId() {
   return crypto.randomBytes(16).toString('hex');
@@ -262,9 +263,14 @@ app.on('window-all-closed', (e) => {
 // activate 不会触发；只有主窗口被打开过、Dock 图标存在时才有这条路径。
 app.on('activate', () => {
   openMainWindow();
+  refreshTmuxProbeThrottled();
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Prime the tmux availability cache before wiring the tray so the very
+  // first right-click already has an accurate `enabled` state.
+  await refreshTmuxProbe();
+
   createTray();
   setupIPC();
   updateTrayIcon();
@@ -321,6 +327,34 @@ function loadTrayTemplateImage() {
   const icon = nativeImage.createFromPath(iconPath);
   icon.setTemplateImage(true);
   return icon;
+}
+
+// -----------------------------------------------------------------------
+// Tmux availability cache
+//
+// A live read-only probe (`<tmux> -V`) drives whether the "同步 tmux …"
+// tray item is enabled. We prime the cache before creating the tray at
+// startup and refresh it (throttled, 5s min interval) on `activate` — so
+// the user gets accurate menu state after installing / uninstalling tmux
+// without needing to restart the app.
+// -----------------------------------------------------------------------
+let tmuxProbe = { available: false, path: null, version: null };
+let lastTmuxProbeAt = 0;
+
+async function refreshTmuxProbe() {
+  try {
+    tmuxProbe = await probeTmux();
+  } catch (error) {
+    console.warn('[tmux-probe] refresh failed:', error);
+    tmuxProbe = { available: false, path: null, version: null };
+  }
+  lastTmuxProbeAt = Date.now();
+}
+
+function refreshTmuxProbeThrottled(minIntervalMs = 5000) {
+  if (Date.now() - lastTmuxProbeAt < minIntervalMs) return;
+  // Fire and forget; menu build reads the latest cache next right-click.
+  void refreshTmuxProbe();
 }
 
 // -----------------------------------------------------------------------
@@ -386,18 +420,20 @@ async function syncTmuxToWorkspaces() {
   }
 }
 
-function createTray() {
-  // 创建托盘图标
-  tray = new Tray(loadTrayTemplateImage());
-  tray.setToolTip('Noty - ntfy.sh 通知');
+function buildTrayContextMenu() {
+  const tmuxAvailable = tmuxProbe.available;
+  const syncItem = {
+    label: '同步 tmux 到工作区',
+    enabled: tmuxAvailable,
+    click: () => {
+      void syncTmuxToWorkspaces();
+    }
+  };
+  if (!tmuxAvailable) {
+    syncItem.toolTip = '未检测到 tmux，请先安装 tmux 或将其加入 PATH';
+  }
 
-  // 点击托盘图标
-  tray.on('click', () => {
-    toggleWindow(tray);
-  });
-
-  // 右键菜单 — 与 workspace-mvp.md §Q3 定稿顺序对齐
-  const contextMenu = Menu.buildFromTemplate([
+  return Menu.buildFromTemplate([
     {
       label: '打开通知面板',
       click: () => {
@@ -411,15 +447,7 @@ function createTray() {
       }
     },
     { type: 'separator' },
-    {
-      // Step 3c will drive `enabled` from a live tmux availability probe.
-      // For now the item is always enabled; if tmux is missing the click
-      // handler above surfaces a native notification.
-      label: '同步 tmux 到工作区',
-      click: () => {
-        void syncTmuxToWorkspaces();
-      }
-    },
+    syncItem,
     { type: 'separator' },
     {
       label: '设置',
@@ -438,9 +466,22 @@ function createTray() {
       }
     }
   ]);
+}
 
+function createTray() {
+  // 创建托盘图标
+  tray = new Tray(loadTrayTemplateImage());
+  tray.setToolTip('Noty - ntfy.sh 通知');
+
+  // 点击托盘图标
+  tray.on('click', () => {
+    toggleWindow(tray);
+  });
+
+  // 右键菜单：每次右键时按最新 tmux 探测结果动态构建，
+  // 避免 tmux 安装/卸载后菜单状态不 refresh。
   tray.on('right-click', () => {
-    tray.popUpContextMenu(contextMenu);
+    tray.popUpContextMenu(buildTrayContextMenu());
   });
 }
 
