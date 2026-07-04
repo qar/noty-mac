@@ -56,6 +56,24 @@ const schema = {
       soundEnabled: { type: 'boolean' },
       hideRead: { type: 'boolean' }
     }
+  },
+  workspaces: {
+    type: 'array',
+    default: [],
+    items: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        name: { type: 'string' },
+        tmuxSessionName: { type: ['string', 'null'] },
+        directory: { type: 'string' },
+        source: { type: 'string' },
+        createdAt: { type: 'number' },
+        updatedAt: { type: 'number' },
+        lastActiveAt: { type: ['number', 'null'] }
+      },
+      required: ['id', 'name', 'directory', 'source', 'createdAt', 'updatedAt']
+    }
   }
 };
 
