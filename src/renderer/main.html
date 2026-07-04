@@ -4,35 +4,96 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Noty</title>
-    <style>
-      :root {
-        color-scheme: light dark;
-        font-family:
-          -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
-          "PingFang SC", "Helvetica Neue", Arial, sans-serif;
-      }
-      html,
-      body {
-        margin: 0;
-        padding: 0;
-        height: 100vh;
-        background: transparent;
-        color: #6e6e73;
-      }
-      .placeholder {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        height: 100vh;
-        padding: 24px;
-        font-size: 13px;
-        opacity: 0.7;
-      }
-    </style>
+    <link rel="stylesheet" href="main.css" />
   </head>
   <body>
-    <div class="placeholder">
-      Main window scaffold — Step 4a will replace this with the workspace UI.
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-brand">Noty</div>
+        <div class="sidebar-section-title">主导航</div>
+        <nav class="sidebar-nav" aria-label="主导航">
+          <a class="nav-item is-active" href="#workspaces" aria-current="page">
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <rect x="3" y="4" width="7" height="7" rx="1.5" />
+                <rect x="14" y="4" width="7" height="7" rx="1.5" />
+                <rect x="3" y="14" width="7" height="7" rx="1.5" />
+                <rect x="14" y="14" width="7" height="7" rx="1.5" />
+              </svg>
+            </span>
+            <span>工作区</span>
+          </a>
+        </nav>
+      </aside>
+
+      <main class="content">
+        <div class="content-inner">
+          <header class="page-header">
+            <h1 class="page-title">工作区</h1>
+            <div class="toolbar">
+              <button
+                type="button"
+                class="btn btn-primary"
+                id="toolbarSyncBtn"
+                data-action="sync"
+              >
+                同步 tmux
+              </button>
+            </div>
+          </header>
+
+          <section id="workspaceRoot" aria-live="polite">
+            <!-- 空态占位；Step 4b 会在有工作区时替换为 .workspace-grid -->
+            <div class="empty-state" id="emptyState">
+              <div class="empty-state-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <rect x="3" y="4" width="7" height="7" rx="1.5" />
+                  <rect x="14" y="4" width="7" height="7" rx="1.5" />
+                  <rect x="3" y="14" width="7" height="7" rx="1.5" />
+                  <rect x="14" y="14" width="7" height="7" rx="1.5" />
+                </svg>
+              </div>
+              <p class="empty-state-message">
+                还没有工作区。<br />
+                点击“同步 tmux”，把本地每个 tmux session 映射为一个工作区。
+              </p>
+              <button
+                type="button"
+                class="btn btn-primary"
+                id="emptySyncBtn"
+                data-action="sync"
+              >
+                同步 tmux 到工作区
+              </button>
+            </div>
+          </section>
+        </div>
+      </main>
     </div>
+
+    <!-- Step 4a placeholder: minimal script wires the sync buttons to the
+         preload IPC so users can manually smoke-test 3d + 4a's visuals.
+         Step 4b replaces this with a full renderer bundle that lists and
+         renders workspace cards. -->
+    <script>
+      (function () {
+        const api = window.api && window.api.workspace;
+        if (!api) {
+          console.warn(
+            "[main] window.api.workspace unavailable — preload may not be wired"
+          );
+          return;
+        }
+        function triggerSync() {
+          api.syncFromTmux().catch(function (err) {
+            console.error("[main] syncFromTmux failed:", err);
+          });
+        }
+        var buttons = document.querySelectorAll('[data-action="sync"]');
+        buttons.forEach(function (btn) {
+          btn.addEventListener("click", triggerSync);
+        });
+      })();
+    </script>
   </body>
 </html>

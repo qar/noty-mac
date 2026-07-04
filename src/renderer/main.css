@@ -1,0 +1,399 @@
+/* ============================================================
+ *  Noty Main Window — Stylesheet
+ *  Consumes tokens defined in design.md (§2.2, §3.2, §4, §5.1, §16).
+ *  Scope: main window only. Popover / Settings continue to use styles.css.
+ * ============================================================ */
+
+/* ----- Design Tokens (design.md §2.2 / §3.2 / §4 / §5.1) -------- */
+:root {
+  color-scheme: light dark;
+
+  /* Neutral — light */
+  --color-bg-base: rgba(255, 255, 255, 0.72);
+  --color-bg-elevated: #ffffff;
+  --color-bg-subtle: rgba(0, 0, 0, 0.03);
+  --color-border: rgba(0, 0, 0, 0.08);
+  --color-border-strong: rgba(0, 0, 0, 0.14);
+  --color-divider: rgba(0, 0, 0, 0.06);
+
+  --color-text-primary: #1d1d1f;
+  --color-text-secondary: #6e6e73;
+  --color-text-tertiary: #a1a1a6;
+  --color-text-inverse: #ffffff;
+
+  --color-accent: #0a84ff;
+  --color-accent-hover: #0071e3;
+  --color-accent-pressed: #0058b8;
+  --color-accent-subtle: rgba(10, 132, 255, 0.1);
+
+  --color-success: #30d158;
+  --color-danger: #ff453a;
+
+  /* Typography */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+
+  --fs-caption: 11px;
+  --fs-small: 12px;
+  --fs-body: 13px;
+  --fs-label: 13px;
+  --fs-title: 15px;
+  --fs-headline: 17px;
+  --fs-page-title: 22px;
+
+  /* Spacing (4px grid + page-density) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-page-x: 24px;
+  --space-page-y: 20px;
+  --space-page-gap: 20px;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  /* Motion */
+  --motion-fast: 120ms;
+  --motion-base: 200ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg-base: rgba(28, 28, 30, 0.72);
+    --color-bg-elevated: #1c1c1e;
+    --color-bg-subtle: rgba(255, 255, 255, 0.06);
+    --color-border: rgba(255, 255, 255, 0.1);
+    --color-border-strong: rgba(255, 255, 255, 0.18);
+    --color-divider: rgba(255, 255, 255, 0.08);
+
+    --color-text-primary: #f5f5f7;
+    --color-text-secondary: #a1a1a6;
+    --color-text-tertiary: #6e6e73;
+
+    --color-accent: #0a84ff;
+    --color-accent-hover: #409cff;
+    --color-accent-pressed: #0071e3;
+    --color-accent-subtle: rgba(10, 132, 255, 0.16);
+
+    --color-success: #32d74b;
+    --color-danger: #ff453a;
+  }
+}
+
+/* ----- Reset -------------------------------------------------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100vh;
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  color: var(--color-text-primary);
+  /* Transparent so the sidebar-vibrancy material from BrowserWindow shows
+     through. The content pane paints its own opaque background below. */
+  background: transparent;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+/* ----- App shell (design.md §7.4) ----------------------------- */
+.app-shell {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  height: 100vh;
+}
+
+/* Sidebar — transparent to let sidebar vibrancy show. */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  /* Traffic lights (hiddenInset) live at top-left. Reserve 44px. */
+  padding: 44px var(--space-3) var(--space-4);
+  color: var(--color-text-primary);
+  overflow: hidden;
+}
+
+.sidebar-brand {
+  padding: 0 var(--space-3) var(--space-4);
+  font-size: var(--fs-title);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+}
+
+.sidebar-section-title {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* NavItem (design.md §6.9) */
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 36px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  transition:
+    background var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+  text-decoration: none;
+}
+
+.nav-item:hover {
+  background: var(--color-bg-subtle);
+}
+
+.nav-item.is-active {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
+}
+
+.nav-item .nav-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.nav-item .nav-icon svg {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+}
+
+/* ----- Content pane (opaque) ---------------------------------- */
+.content {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-elevated);
+  overflow: hidden;
+  /* hiddenInset title bar leaves the top clear of chrome — do NOT add a
+     background/border here (design.md §10). Add the same 44px reserve so
+     content doesn't collide with the traffic-light area. */
+  padding-top: 44px;
+}
+
+.content-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-page-gap);
+  flex: 1;
+  padding: var(--space-page-y) var(--space-page-x) var(--space-page-y);
+  max-width: 1200px;
+  width: 100%;
+  align-self: center;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.page-title {
+  font-size: var(--fs-page-title);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--color-text-primary);
+  line-height: 1.25;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* ----- Buttons (design.md §6.1) -------------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 32px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  transition:
+    background var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
+}
+
+.btn-primary {
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+}
+
+.btn-primary:hover {
+  background: var(--color-accent-hover);
+}
+
+.btn-primary:active {
+  background: var(--color-accent-pressed);
+}
+
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: transparent;
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-text-primary);
+}
+
+.btn-secondary:hover {
+  background: var(--color-bg-subtle);
+}
+
+/* ----- Workspace grid + card (design.md §6.10) ---------------- */
+.workspace-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+
+.workspace-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 128px;
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-standard);
+  overflow: hidden;
+  position: relative;
+}
+
+.workspace-card:hover {
+  background: var(--color-bg-subtle);
+}
+
+.workspace-card.is-offline {
+  opacity: 0.55;
+}
+
+.workspace-card-title {
+  font-size: var(--fs-title);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.workspace-card-subtitle {
+  font-size: var(--fs-small);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  margin-top: var(--space-1);
+}
+
+.workspace-card-meta {
+  font-size: var(--fs-caption);
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.workspace-card-offline-tag {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  font-size: var(--fs-caption);
+  color: var(--color-text-tertiary);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-subtle);
+}
+
+/* ----- Empty state (design.md §6.6, main-window density) ------ */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+  min-height: 320px;
+}
+
+.empty-state-icon {
+  width: 40px;
+  height: 40px;
+  color: var(--color-text-tertiary);
+}
+
+.empty-state-icon svg {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+}
+
+.empty-state-message {
+  font-size: var(--fs-title);
+  color: var(--color-text-secondary);
+  max-width: 360px;
+  line-height: 1.5;
+}
+
+/* ----- Reduced motion ----------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
