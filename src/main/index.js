@@ -9,6 +9,7 @@ const { toggleWindow, getWindow } = require('./window');
 const { openMainWindow, hideMainWindow, getMainWindow, destroyMainWindow } = require('./main-window');
 const workspace = require('./workspace');
 const { probeTmux } = require('./tmux-probe');
+const { registerWorkspaceIpc } = require('./ipc-workspace');
 
 function generateId() {
   return crypto.randomBytes(16).toString('hex');
@@ -249,6 +250,46 @@ async function jumpToTmuxTarget(target, options = {}) {
   }
 }
 
+// Simplified jump used by the workspace card click (Q7 decision):
+// only `switch-client -t {session}` — do NOT select-window / select-pane,
+// so tmux stays on whichever window/pane the session was last on. Notification
+// jumps still use jumpToTmuxTarget for precise pane targeting.
+async function jumpToTmuxSession(sessionName) {
+  if (typeof sessionName !== 'string' || !sessionName || sessionName.startsWith('-')) {
+    return { success: false, reason: 'invalid_session' };
+  }
+  if (!/^[A-Za-z0-9_.:%@+/-]+$/.test(sessionName)) {
+    return { success: false, reason: 'invalid_session' };
+  }
+
+  try {
+    // Confirm the session actually exists before we touch clients.
+    await execTmux(['has-session', '-t', sessionName]);
+
+    await raiseApp('kitty');
+
+    let client = pickTmuxClient(await listTmuxClients(), sessionName);
+    if (!client) {
+      client = await waitForKittyClient(sessionName, 1500);
+    }
+    if (!client) {
+      return { success: false, reason: 'no_attached_client' };
+    }
+
+    await execTmux(['switch-client', '-c', client.name, '-t', sessionName]);
+    return { success: true };
+  } catch (error) {
+    if (error.message === 'tmux_not_found') {
+      return { success: false, reason: 'tmux_not_found' };
+    }
+    // has-session on an unknown session errors with "can't find session: X".
+    if (/can't find session|no such session|session not found/i.test(error?.message || '')) {
+      return { success: false, reason: 'session_not_found' };
+    }
+    return { success: false, reason: error.message || 'tmux_error' };
+  }
+}
+
 let tray = null;
 let ntfyClient = null;
 let settingsWindow = null;
@@ -273,6 +314,10 @@ app.whenReady().then(async () => {
 
   createTray();
   setupIPC();
+  registerWorkspaceIpc({
+    jumpToTmuxSession,
+    syncTmuxToWorkspaces,
+  });
   updateTrayIcon();
 
   updater = new Updater();

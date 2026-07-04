@@ -44,5 +44,18 @@ contextBridge.exposeInMainWorld('api', {
   applyUpdate: () => ipcRenderer.invoke('apply-update'),
   onUpdateDownloadProgress: (callback) => {
     ipcRenderer.on('update-download-progress', (event, progress) => callback(progress));
+  },
+
+  // 工作区 (Workspace) —— Step 3d
+  workspace: {
+    list: () => ipcRenderer.invoke('workspace:list'),
+    syncFromTmux: () => ipcRenderer.invoke('workspace:sync-tmux'),
+    jump: (id) => ipcRenderer.invoke('workspace:jump', id),
+    openInFinder: (id) => ipcRenderer.invoke('workspace:open-in-finder', id),
+    rename: (id, name) => ipcRenderer.invoke('workspace:rename', id, name),
+    remove: (id, opts) => ipcRenderer.invoke('workspace:remove', id, opts),
+    onUpdated: (callback) => {
+      ipcRenderer.on('workspace:updated', () => callback());
+    }
   }
 });
