@@ -148,3 +148,21 @@ For more details, see README.md and docs/QUICKSTART.md.
 - If push fails, resolve and retry until it succeeds
 
 <!-- END BEADS INTEGRATION -->
+
+## Commit-Time Beads Sync
+
+This repo already wires beads into git via `core.hooksPath=.beads/hooks`. **You do not run `bd export` manually.**
+
+- Every `git commit` triggers `.beads/hooks/pre-commit`, which runs `bd hooks run pre-commit`.
+- That hook exports the current beads state to `.beads/issues.jsonl` (tracked in git — see `.beads/.gitignore`, which explicitly does NOT ignore `issues.jsonl`) and stages it.
+- Result: **every commit carries a snapshot of the beads state at that point in time**. History and diffs of tasks are reviewable via `git log -p -- .beads/issues.jsonl`.
+
+Agent rules:
+
+- Before starting work on a task, `bd create` an issue (or claim an existing one with `bd update <id> --claim`).
+- On completion, `bd close <id> --reason "…"`. Do this **before** the `git commit`, so the closing state lands in the same JSONL snapshot.
+- **Do not edit `.beads/hooks/*`** — beads regenerates those files and will overwrite manual changes. If a hook misbehaves, run `bd doctor`.
+- **Do not manually `git add .beads/issues.jsonl`** — the pre-commit hook stages it. If you find yourself needing to, something is wrong with the hook setup.
+- Prefer referencing the issue id in commit messages: `Refs: bd-<id>` or `Closes: bd-<id>`.
+
+When operating in an environment without a real terminal (headless runs, Claude Code sandboxes), remember: `bd` connects to a local Dolt server on localhost. If a `bd` command hangs or errors with a connection issue, ensure the shell has network access to localhost (in Claude Code, pass `dangerouslyDisableSandbox: true` to the Bash tool).
