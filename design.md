@@ -116,18 +116,20 @@ Noty 是一个常驻菜单栏的通知聚合器，用户单次停留时间极短
 
 **只用系统字体。** 不引入 Web Font，不引入图标字体（用 SVG）。
 
-### 3.2 字号阶梯（严格 6 级，不允许"再加一级"）
+### 3.2 字号阶梯（通用 6 级 + 主窗口专用 1 级）
 
-| Token | 大小 | 行高 | 字重 | 用途 |
-|---|---|---|---|---|
-| `--fs-caption`  | 11px | 1.4 | 500 | 时间戳、徽章、辅助元数据 |
-| `--fs-small`    | 12px | 1.5 | 400 | 次要说明、频道路径 |
-| `--fs-body`     | 13px | 1.5 | 400 | 通知正文、表单值 |
-| `--fs-label`    | 13px | 500 | 500 | 表单标签、设置项 |
-| `--fs-title`    | 15px | 1.4 | 600 | 分组标题、通知标题 |
-| `--fs-headline` | 17px | 1.3 | 600 | 页面标题（Header 唯一）|
+| Token | 大小 | 行高 | 字重 | 用途 | 场景 |
+|---|---|---|---|---|---|
+| `--fs-caption`    | 11px | 1.4  | 500 | 时间戳、徽章、辅助元数据 | 全部 |
+| `--fs-small`      | 12px | 1.5  | 400 | 次要说明、频道路径 | 全部 |
+| `--fs-body`       | 13px | 1.5  | 400 | 通知正文、表单值 | 全部 |
+| `--fs-label`      | 13px | 500  | 500 | 表单标签、设置项 | 全部 |
+| `--fs-title`      | 15px | 1.4  | 600 | 分组标题、通知标题、卡片标题 | 全部 |
+| `--fs-headline`   | 17px | 1.3  | 600 | Popover / 设置窗顶部标题 | Popover / Settings |
+| `--fs-page-title` | 22px | 1.25 | 600 | 主窗口页面级主标题（如"工作区"）| Main Window 独占 |
 
-- **禁止**中间插入 14px、16px 之类的"看起来正好"字号。
+- 通用 6 级适用于全部场景；`--fs-page-title` **只允许**用于主窗口的页面标题，Popover 一律使用 `--fs-headline`。
+- **禁止**中间插入 14 / 16 / 18 / 20px 等未定义档次的字号。
 - 字重只允许 400 / 500 / 600 三档，禁止 700 及以上。
 - 中文与英文行高一致，不因语言切换调整。
 
@@ -145,6 +147,7 @@ Noty 是一个常驻菜单栏的通知聚合器，用户单次停留时间极短
 采用 **4px 基础网格**（Google Stitch 与 Apple HIG 一致的做法）。
 
 ```css
+/* 基础网格 · 全场景通用 */
 --space-0:  0;
 --space-1:  4px;
 --space-2:  8px;
@@ -154,6 +157,11 @@ Noty 是一个常驻菜单栏的通知聚合器，用户单次停留时间极短
 --space-6:  24px;
 --space-8:  32px;
 --space-10: 40px;
+
+/* 主窗口 · 页面级密度（仅 Main Window 使用） */
+--space-page-x:   24px;  /* content 左右内边距 */
+--space-page-y:   20px;  /* content 上下内边距 */
+--space-page-gap: 20px;  /* 主内容区块之间的垂直间距 */
 ```
 
 ### 4.1 使用约束
@@ -161,6 +169,7 @@ Noty 是一个常驻菜单栏的通知聚合器，用户单次停留时间极短
 - 组件内部间距（padding）只从 `--space-2/3/4` 中选。
 - 组件之间的垂直间距（gap）只从 `--space-2/3/4/6` 中选。
 - 分组之间的大间距用 `--space-6` 或 `--space-8`，**禁止用 `margin: 30px` 之类的自造值**。
+- **主窗口**的 content 层左右使用 `--space-page-x`、上下使用 `--space-page-y`；**Popover / 设置窗** 保持紧凑，不使用 `--space-page-*`。
 - **反对"呼吸感"叙事下的空间浪费**：任何单块留白 > 40px 都要在 PR 描述里说明为什么。
 
 ### 4.2 触控/点击目标
@@ -177,12 +186,13 @@ Noty 是一个常驻菜单栏的通知聚合器，用户单次停留时间极短
 
 ```css
 --radius-sm: 6px;   /* 输入框、小按钮、徽章 */
---radius-md: 8px;   /* 卡片、通知项、主按钮 */
---radius-lg: 12px;  /* 窗口、Popover 容器 */
+--radius-md: 8px;   /* 卡片（含工作区卡片）、通知项、主按钮 */
+--radius-lg: 12px;  /* 窗口容器、Popover、主窗口 */
 --radius-pill: 999px; /* Toggle、圆形头像 */
 ```
 
 **只有这四档。** 不出现 10px、14px 等中间值。
+桌面主窗口的卡片场景（如工作区卡片）也统一使用 `--radius-md`，不新增"卡片专用"档。
 
 ### 5.2 描边
 
@@ -273,8 +283,12 @@ backdrop-filter: saturate(180%) blur(30px);
 
 ### 6.6 空状态（Empty State）
 
-- 一行 caption 文本 + 一个次操作按钮，居中；**禁止大 emoji、禁止插画、禁止说教长文案**。
-- 高度不超过内容区 40%，剩余留白不额外填充。
+分两种密度：
+
+- **紧凑（Popover / 设置窗）**：一行 `--fs-body` 文本 + 一个 Ghost / Secondary 按钮，居中；**不加图标**。高度不超过内容区 40%。
+- **常规（主窗口）**：允许 1 个 SF Symbol 图标（32–40px，颜色 `--color-text-tertiary`） + 一句 `--fs-title` 引导文案 + 1 个 Primary 按钮，三行垂直居中。
+
+**共同禁止**：营销式插画、多层按钮、大段说教文案、emoji 图标。
 
 ### 6.7 徽章（Badge）
 
@@ -290,6 +304,38 @@ backdrop-filter: saturate(180%) blur(30px);
 - 圆角 `--radius-sm`，内边距 `--space-3`。
 - 支持一键复制（右上角 Ghost IconButton）。
 
+### 6.9 Sidebar / NavItem（主窗口专用）
+
+主窗口左侧导航，承担应用主结构入口：
+
+- **Sidebar 容器**：宽度 240px 固定（阶段一不折叠）；材质使用系统 sidebar vibrancy；顶部预留 44px 空白供 macOS 交通灯浮层；分组之间用 `--space-4` 垂直间距，不用 divider。
+- **NavItem**：高度 36px，左右内边距 `--space-3`，圆角 `--radius-sm`，图标 18px（见 §9）+ `--space-2` gap + `--fs-body` 文字。
+- **NavItem 状态**：
+  - 默认：文字 `--color-text-secondary`，图标同色。
+  - Hover：背景 `--color-bg-subtle`。
+  - Active（选中）：背景 `--color-accent-subtle`，文字/图标 `--color-accent`。
+  - Focus 键盘态：叠加 §5.2 focus 环，不替换背景。
+- **分组标题**（如 "工作区"、"通知"）：`--fs-caption` + `--color-text-tertiary` + `text-transform: uppercase` + `letter-spacing: 0.04em`，位于 Sidebar 顶部而不是每组之上。
+- **禁止**：Sidebar 内出现 Primary 按钮、彩色徽章、深层折叠树（超过 1 级嵌套）。
+
+### 6.10 Card（工作区卡片是首个用例）
+
+主窗口中承载"一组关联信息 + 一个主操作"的原子块：
+
+- **尺寸**：宽度用网格 `repeat(auto-fill, minmax(220px, 1fr))` 自适应；固定高度 128px（不允许因内容伸缩）。
+- **视觉**：底 `--color-bg-elevated`，1px 描边 `--color-border`，圆角 `--radius-md`；**默认无阴影**（§5.3 依然生效）。
+- **内边距**：`--space-4`（16px）。
+- **信息层级**：
+  - 主标题：`--fs-title` + `--color-text-primary`，一行截断。
+  - 副信息（如关联的 tmux session 名）：`--fs-small` + `--color-text-secondary`，一行截断。
+  - 元信息（如最后活跃时间）：`--fs-caption` + `--color-text-tertiary`，置于卡片右下或左下。
+- **交互**：
+  - Hover：背景切 `--color-bg-subtle`；**禁止**位移、缩放、阴影加强。
+  - 单击 = 卡片主操作（如"跳转到 tmux"）。
+  - 右键 = 弹出 context menu，条目参见对应功能规范。
+- **离线态**（如 tmux session 已消失）：整卡透明度 0.55，左上角加 `--fs-caption` 灰色标签"离线"；单击行为改为弹确认框，不静默失败。
+- **禁止**：卡片内嵌 Primary 按钮、彩色徽章列、多层背景块、装饰性图标。
+
 ---
 
 ## 7. 布局与窗口
@@ -298,11 +344,14 @@ backdrop-filter: saturate(180%) blur(30px);
 
 | 窗口 | 宽度 | 高度 | 备注 |
 |---|---|---|---|
-| 主 Popover（通知列表）| 380px | 540px | 不允许用户拉伸 |
-| 设置窗口 | 520px | 620px | 独立窗口，可关闭 |
+| Tray Popover（通知列表）| 380px | 540px | 不允许用户拉伸 |
+| 设置窗口 | 520px | 620px | 独立窗口，可关闭，不 resize |
+| 主窗口（Main Window）| 1120px 初始 · 880px 最小 · 无最大 | 720px 初始 · 560px 最小 · 无最大 | 可 resize、可最小化、可全屏 |
 | 系统通知 | 系统决定 | 系统决定 | 不自定义 |
 
-**不做响应式。** 桌面菜单栏 App 的窗口尺寸就是产品的一部分。
+- Popover 与 设置窗**不做响应式**，尺寸即产品的一部分。
+- 主窗口在最小尺寸下必须保持功能可用：Sidebar 不折叠、卡片至少 2 列。
+- **关闭主窗口 = 隐藏窗口**（不销毁），下次打开秒开、状态不丢；应用继续以 tray 常驻。
 
 ### 7.2 结构
 
@@ -327,6 +376,32 @@ backdrop-filter: saturate(180%) blur(30px);
 
 - 滚动条使用 macOS 系统默认（`overflow: auto` + 系统 overlay 滚动条），**禁止自定义 6px 细滚动条**（当前 `styles.css` 里那段要移除）。
 - 列表滚动到顶时不出现橡皮筋阴影；到底时不做"没有更多了"文案。
+
+### 7.4 主窗口结构（Main Window Layout）
+
+主窗口是与 Popover 并列的第二种窗口模板，用于长时间停留的信息汇聚（首个用例：工作区列表）。
+
+骨架：
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ ●●●        │                                            │
+│ (TrafficL) │   Content                                  │
+│            │                                            │
+│  Sidebar   │   ┌─ Page Title (--fs-page-title)          │
+│  240px     │   ├─ Toolbar (可选, 40px)                  │
+│            │   └─ Cards / List (最大宽度 1200px, 居中)  │
+│  Nav Items │                                            │
+│            │                                            │
+└─────────────────────────────────────────────────────────┘
+```
+
+- **标题栏**：Electron `titleBarStyle: 'hiddenInset'`。交通灯浮在内容左上，不占独立高度。**不给标题栏加背景色、不加下边框**，让它随 Sidebar / Content 材质自然过渡。
+- **Sidebar**：宽度 **240px 固定**（阶段一不做折叠、不做拖拽调宽）。材质使用系统 sidebar vibrancy（Electron `vibrancy: 'sidebar'` 或等价）。规格见 §6.9。
+- **Content**：不透明底 `--color-bg-elevated`。左右内边距 `--space-page-x`（24px），上下 `--space-page-y`（20px）。**不使用毛玻璃**（§5.4 只允许最外层，主窗口的最外层是窗口本身而非 Content）。
+- **Content 最大宽度**：主内容最大宽度 **1200px**，超过时居中留白，两侧不放次要内容。
+- **Toolbar**（可选）：Page Title 下方固定 40px 高度的横向操作区，仅承担页面级 CTA（如"同步 tmux"）。
+- **禁止**：主窗口引入 Tab、多层 Sidebar、Ribbon、悬浮 FAB、页面内弹出 Panel。
 
 ---
 
@@ -356,7 +431,10 @@ backdrop-filter: saturate(180%) blur(30px);
 ## 9. 图标（Iconography）
 
 - **只用 SF Symbols 或线条化 SVG。** 禁止用 emoji 作为功能图标（✓ ⚙️ ✕ 目前在用，需替换）。
-- 图标线宽 1.5px，尺寸 16px（Header/操作按钮）或 20px（页面级）。
+- 图标线宽 1.5px，尺寸三档：
+  - **16px** — Header 图标按钮、通知项内联操作。
+  - **18px** — 主窗口 Sidebar NavItem 图标。
+  - **20px** — 主窗口页面级主图标（空状态图标 32–40px 是 §6.6 定义的场景例外，不新开档）。
 - 图标颜色继承 `currentColor`，默认 `--color-text-secondary`，hover 时 `--color-text-primary`。
 - 不给图标加背景色圆圈（除非它承担"状态徽章"的角色）。
 
@@ -368,6 +446,8 @@ backdrop-filter: saturate(180%) blur(30px);
 - 深色底不追求纯黑，使用 `#1C1C1E` 系列，避免 OLED 屏"漆黑"造成阅读疲劳。
 - 深色模式下毛玻璃透明度略高（0.72），保留系统壁纸质感。
 - 深色模式下强调色亮度略提（见 §2.2）。
+- **主窗口 `hiddenInset` 标题栏**在深色模式下无需特殊处理：交通灯由 macOS 自动 invert，标题栏区域**不加背景色、不加下边框**，让它随 Content / Sidebar 材质自然过渡。
+- **Sidebar vibrancy** 在深色模式下自动切换材质（无需手动 CSS 分支）；NavItem 的 Hover / Active 底色使用 token（`--color-bg-subtle` / `--color-accent-subtle`），会自动跟随。
 
 ---
 
@@ -425,7 +505,7 @@ backdrop-filter: saturate(180%) blur(30px);
 - 用 emoji 当功能图标
 - 加装饰性阴影/渐变/圆点
 - 造第 4 种颜色
-- 造第 7 级字号
+- 造 §3.2 未定义档次的字号（`--fs-page-title` 是主窗口独占例外，其它场景不适用）
 - 用位移或缩放做 hover 反馈
 - 在窗口里放广告位、推广位、Banner
 
@@ -449,6 +529,29 @@ backdrop-filter: saturate(180%) blur(30px);
 5. `✓` `⚙️` `✕` emoji 按钮 —— 违反 §9，替换为 SVG 图标。
 6. 字号 18px / 16px 混用 —— 违反 §3.2，收敛到六级阶梯。
 7. 深色模式缺失 —— 违反 §10，需补齐。
+
+---
+
+## 16. 密度与场景对照表（Density Cheat Sheet）
+
+同一套 token，在不同场景下**允许**取不同值。下表是三种场景的规格速查，实施时对号入座，不要跨场景挪值。
+
+| 维度 | Tray Popover | 主窗口（Main Window） | 设置窗口 |
+|---|---|---|---|
+| 窗口尺寸 | 380 × 540（固定） | 1120 × 720 初始 / 880 × 560 最小 / 可 resize | 520 × 620（固定） |
+| 标题栏 | 无（Popover 无系统标题栏） | `hiddenInset`（交通灯浮层）| 标准 title bar |
+| 外层材质 | 毛玻璃（§5.4） | 不透明 `--color-bg-elevated`（Sidebar 单独用 sidebar vibrancy）| 毛玻璃（§5.4） |
+| Header / Page Title 字号 | `--fs-headline` 17px | `--fs-page-title` 22px | `--fs-headline` 17px |
+| Content 内边距（左右 / 上下）| `--space-2` / `--space-2`（列表项密堆叠）| `--space-page-x` 24 / `--space-page-y` 20 | `--space-5` 20 / `--space-5` 20 |
+| 组件之间垂直间距 | `--space-2` | `--space-page-gap` 20 | `--space-6` 24 |
+| 卡片布局 | 不使用卡片，用 divider 列表 | 网格 `repeat(auto-fill, minmax(220px, 1fr))`，卡片见 §6.10 | 卡片式分组，单列 |
+| Sidebar | 无 | 240px 固定，规格见 §6.9 | 无 |
+| 图标默认尺寸 | 16px（Header）| 18px（Sidebar Nav） / 20px（页面级） | 16px（Header） |
+| 空态形态 | Body 文本 + Secondary 按钮，无图标 | SF Symbol 32–40px + 引导文案 + Primary 按钮 | Body 文本 + Secondary 按钮，无图标 |
+| 滚动条 | 系统默认 overlay | 系统默认 overlay | 系统默认 overlay |
+| Primary CTA 数量上限 | 每屏 ≤ 1 | 每屏 ≤ 1 | 每屏 ≤ 1 |
+
+**核心原则**：**规格分场景，token 不分场景**。同一 token 值在三种场景下都不变；变的是"哪个场景优先选哪个 token"。
 
 ---
 
