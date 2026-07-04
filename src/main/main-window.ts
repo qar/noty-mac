@@ -17,7 +17,9 @@ import * as path from 'path';
 let mainWindow: BrowserWindow | null = null;
 
 function rendererHtmlPath(): string {
-  return path.join(app.getAppPath(), 'src/renderer/main.html');
+  // Loaded from the build output (see scripts/build-renderer.js). Both `dev`
+  // and the packaged asar keep the same relative layout under `dist/renderer/`.
+  return path.join(app.getAppPath(), 'dist/renderer/main.html');
 }
 
 function preloadPath(): string {

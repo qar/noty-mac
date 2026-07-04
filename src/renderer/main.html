@@ -31,69 +31,19 @@
           <header class="page-header">
             <h1 class="page-title">工作区</h1>
             <div class="toolbar">
-              <button
-                type="button"
-                class="btn btn-primary"
-                id="toolbarSyncBtn"
-                data-action="sync"
-              >
+              <button type="button" class="btn btn-primary" id="toolbarSyncBtn">
                 同步 tmux
               </button>
             </div>
           </header>
 
-          <section id="workspaceRoot" aria-live="polite">
-            <!-- 空态占位；Step 4b 会在有工作区时替换为 .workspace-grid -->
-            <div class="empty-state" id="emptyState">
-              <div class="empty-state-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <rect x="3" y="4" width="7" height="7" rx="1.5" />
-                  <rect x="14" y="4" width="7" height="7" rx="1.5" />
-                  <rect x="3" y="14" width="7" height="7" rx="1.5" />
-                  <rect x="14" y="14" width="7" height="7" rx="1.5" />
-                </svg>
-              </div>
-              <p class="empty-state-message">
-                还没有工作区。<br />
-                点击“同步 tmux”，把本地每个 tmux session 映射为一个工作区。
-              </p>
-              <button
-                type="button"
-                class="btn btn-primary"
-                id="emptySyncBtn"
-                data-action="sync"
-              >
-                同步 tmux 到工作区
-              </button>
-            </div>
-          </section>
+          <!-- Renderer main.ts (compiled to main.bundle.js) mounts empty
+               state or the workspace grid here. -->
+          <section id="workspaceRoot" aria-live="polite"></section>
         </div>
       </main>
     </div>
 
-    <!-- Step 4a placeholder: minimal script wires the sync buttons to the
-         preload IPC so users can manually smoke-test 3d + 4a's visuals.
-         Step 4b replaces this with a full renderer bundle that lists and
-         renders workspace cards. -->
-    <script>
-      (function () {
-        const api = window.api && window.api.workspace;
-        if (!api) {
-          console.warn(
-            "[main] window.api.workspace unavailable — preload may not be wired"
-          );
-          return;
-        }
-        function triggerSync() {
-          api.syncFromTmux().catch(function (err) {
-            console.error("[main] syncFromTmux failed:", err);
-          });
-        }
-        var buttons = document.querySelectorAll('[data-action="sync"]');
-        buttons.forEach(function (btn) {
-          btn.addEventListener("click", triggerSync);
-        });
-      })();
-    </script>
+    <script src="main.bundle.js"></script>
   </body>
 </html>

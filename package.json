@@ -5,9 +5,10 @@
   "main": "dist/main/index.js",
   "scripts": {
     "clean": "rm -rf dist",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.renderer.json",
     "build:main": "tsc",
-    "build": "npm run clean && npm run build:main",
+    "build:renderer": "node scripts/build-renderer.js",
+    "build": "npm run clean && npm run build:main && npm run build:renderer",
     "start": "npm run build && electron .",
     "dev": "npm run build && electron . --enable-logging",
     "pack": "npm run build && electron-builder --dir",
