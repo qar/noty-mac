@@ -7,6 +7,12 @@
     <link rel="stylesheet" href="main.css" />
   </head>
   <body>
+    <!-- Full-width drag region covering the hiddenInset traffic-light row.
+         Traffic lights themselves stay clickable because macOS treats them
+         as special (they punch through -webkit-app-region: drag). Interactive
+         elements below the header set `no-drag` so they remain clickable. -->
+    <div class="title-bar-drag" aria-hidden="true"></div>
+
     <div class="app-shell" id="appShell">
       <!-- List panel (left) — populated by renderer -->
       <aside class="workspace-list-panel" id="listPanel">

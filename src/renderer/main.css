@@ -145,6 +145,40 @@ code {
 }
 
 /* ============================================================
+ * Drag region — covers the top 44px so the user can drag the window
+ * from the traffic-light row. macOS still lets the traffic-light
+ * buttons receive clicks through this overlay. Interactive elements
+ * (buttons, inputs, list items) set `no-drag` below so they remain
+ * clickable even if they overlap this row.
+ * ============================================================ */
+.title-bar-drag {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--title-bar-height);
+  -webkit-app-region: drag;
+  z-index: 999;
+}
+
+/* Any interactive surface that might visually cross the 44px drag row
+   (e.g. context menus, modals, absolutely-positioned overlays) must
+   opt out of drag so clicks reach it. Also applies to the standard
+   controls for defensive isolation. */
+button,
+input,
+select,
+textarea,
+a,
+dialog,
+.workspace-list-item,
+.context-menu,
+.app-dialog,
+.detail-path-row {
+  -webkit-app-region: no-drag;
+}
+
+/* ============================================================
  * LEFT: workspace list panel
  * ============================================================ */
 .workspace-list-panel {

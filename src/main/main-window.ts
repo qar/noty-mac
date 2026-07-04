@@ -37,6 +37,9 @@ function createMainWindow(): BrowserWindow {
     height: 720,
     minWidth: 880,
     minHeight: 560,
+    // Explicit for documentation; also the Electron default.
+    resizable: true,
+    movable: true,
     show: false,
     title: 'Noty',
     titleBarStyle: 'hiddenInset',
@@ -47,7 +50,10 @@ function createMainWindow(): BrowserWindow {
     // window the sidebar material; the renderer CSS then paints an opaque
     // panel over the content area only.
     vibrancy: 'sidebar',
-    backgroundColor: '#00000000',
+    // NOTE: Do NOT set `backgroundColor: '#00000000'` here. On macOS the
+    // combination of hiddenInset + vibrancy + a fully transparent background
+    // makes Electron treat the window as chromeless — the OS then omits the
+    // native resize handles and the top drag region.
     webPreferences: {
       preload: preloadPath(),
       contextIsolation: true,
