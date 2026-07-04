@@ -43,3 +43,38 @@ export interface WorkspaceMetaFile {
   updatedAt: number;
   schemaVersion: 1;
 }
+
+// ---------------------------------------------------------------------------
+// AI activity status
+//
+// Reported by an external agent (Claude Code / cursor / a shell script)
+// into `<workspace-dir>/agent-status.json`. Noty polls the file each list()
+// and shows the current state as a badge on the workspace card + detail
+// panel. The renderer decides "stale" from `updatedAt` vs. `Date.now()`.
+// ---------------------------------------------------------------------------
+
+export type AgentState =
+  | 'idle'
+  | 'running'
+  | 'waiting_input'
+  | 'completed'
+  | 'error';
+
+export interface AgentStatus {
+  state: AgentState;
+  /** One-line human-readable summary. Optional. */
+  message?: string;
+  /** Identifier of the reporting agent (e.g. `claude-code`, `cursor`, `shell`).
+   *  Optional; multi-agent per-workspace is a future concern. */
+  agent?: string;
+  /** ms epoch — used by the renderer to compute "stale". */
+  updatedAt: number;
+  /** Optional: reporting process PID. */
+  pid?: number;
+}
+
+export interface WorkspaceWithStatus extends Workspace {
+  /** null when no `agent-status.json` file exists or the file couldn't be
+   *  read/parsed. */
+  agentStatus: AgentStatus | null;
+}

@@ -9,7 +9,7 @@
 // heavy tmux orchestration in one place until we do a proper tmux refactor.
 
 import { ipcMain, shell } from 'electron';
-import type { RemoveOptions, Workspace } from './types';
+import type { RemoveOptions, Workspace, WorkspaceWithStatus } from './types';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const workspace = require('./workspace');
@@ -28,8 +28,8 @@ export interface WorkspaceIpcDeps {
 }
 
 export function registerWorkspaceIpc(deps: WorkspaceIpcDeps): void {
-  ipcMain.handle('workspace:list', async (): Promise<Workspace[]> => {
-    return workspace.list();
+  ipcMain.handle('workspace:list', async (): Promise<WorkspaceWithStatus[]> => {
+    return workspace.listWithStatus();
   });
 
   ipcMain.handle('workspace:sync-tmux', async (): Promise<void> => {

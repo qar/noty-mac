@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# noty-status — report AI activity state to the current tmux session's Noty
+# workspace. Reads `tmux display-message -p '#S'` to find the session, scans
+# workspace.json files to locate the matching workspace directory, and writes
+# `agent-status.json` atomically (tmp + mv -f).
+#
+# Usage:
+#   noty-status <state> [message]
+#
+#   state   idle | running | waiting_input | completed | error
+#   message optional free-form summary shown in Noty's UI
+#
+# Environment variables:
+#   NOTY_AGENT             — override the "agent" field (default: shell)
+#   NOTY_AGENT_PID         — override the "pid" field (default: $PPID)
+#   NOTY_WORKSPACES_DIR    — override the workspaces root
+#                             (default: ~/Library/Application Support/noty-mac/workspaces)
+#
+# Example:
+#   noty-status running "generating patches"
+#   noty-status waiting_input "confirm the refactor plan?"
+#   noty-status completed "all tests pass"
+#   noty-status idle
+
+set -euo pipefail
+
+# ----- Parse args --------------------------------------------------------
+if [[ $# -lt 1 ]]; then
+  cat >&2 <<EOF
+usage: noty-status <state> [message]
+  state   idle | running | waiting_input | completed | error
+  message optional free-form summary
+EOF
+  exit 1
+fi
+
+STATE="$1"
+MESSAGE="${2:-}"
+
+case "$STATE" in
+  idle|running|waiting_input|completed|error) ;;
+  *)
+    echo "error: invalid state '$STATE'" >&2
+    echo "must be one of: idle, running, waiting_input, completed, error" >&2
+    exit 1
+    ;;
+esac
+
+# ----- Locate tmux session ------------------------------------------------
+if ! command -v tmux >/dev/null 2>&1; then
+  echo "error: tmux not found in PATH" >&2
+  exit 2
+fi
+
+SESSION="$(tmux display-message -p '#S' 2>/dev/null || true)"
+if [[ -z "$SESSION" ]]; then
+  echo "error: not attached to a tmux session (\`tmux display-message -p '#S'\` returned empty)" >&2
+  exit 3
+fi
+
+# ----- Locate workspace directory -----------------------------------------
+WORKSPACES_ROOT="${NOTY_WORKSPACES_DIR:-$HOME/Library/Application Support/noty-mac/workspaces}"
+
+if [[ ! -d "$WORKSPACES_ROOT" ]]; then
+  echo "error: workspaces root not found: $WORKSPACES_ROOT" >&2
+  echo "hint: open Noty and click '同步 tmux 到工作区' first" >&2
+  exit 4
+fi
+
+WORKSPACE_DIR=""
+# Match `"tmuxSessionName": "<SESSION>"` in each workspace.json. workspace.json
+# is one level below WORKSPACES_ROOT/<uuid>/.
+while IFS= read -r meta_file; do
+  # Use `grep -F` for literal match on the value; workspace.json is emitted by
+  # Noty with `JSON.stringify(..., null, 2)`, so the field appears as
+  # `"tmuxSessionName": "<name>"` with two-space indent.
+  if grep -Fq "\"tmuxSessionName\": \"$SESSION\"" "$meta_file"; then
+    WORKSPACE_DIR="$(dirname "$meta_file")"
+    break
+  fi
+done < <(find "$WORKSPACES_ROOT" -mindepth 2 -maxdepth 2 -name workspace.json -type f 2>/dev/null)
+
+if [[ -z "$WORKSPACE_DIR" ]]; then
+  echo "error: no Noty workspace found for tmux session '$SESSION'" >&2
+  echo "hint: open Noty and click '同步 tmux 到工作区' to create one" >&2
+  exit 5
+fi
+
+# ----- Build JSON ---------------------------------------------------------
+AGENT="${NOTY_AGENT:-shell}"
+PID="${NOTY_AGENT_PID:-$PPID}"
+UPDATED_AT="$(( $(date +%s) * 1000 ))"
+
+# Minimal JSON string escape: backslash first, then double-quote.
+# (Newlines, tabs, etc. are not handled; keep messages single-line.)
+json_escape() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  printf '%s' "$s"
+}
+
+AGENT_ESC="$(json_escape "$AGENT")"
+MESSAGE_ESC="$(json_escape "$MESSAGE")"
+
+STATUS_FILE="$WORKSPACE_DIR/agent-status.json"
+TMP_FILE="${STATUS_FILE}.tmp.$$"
+
+if [[ -n "$MESSAGE" ]]; then
+  cat > "$TMP_FILE" <<EOF
+{
+  "state": "$STATE",
+  "message": "$MESSAGE_ESC",
+  "agent": "$AGENT_ESC",
+  "updatedAt": $UPDATED_AT,
+  "pid": $PID
+}
+EOF
+else
+  cat > "$TMP_FILE" <<EOF
+{
+  "state": "$STATE",
+  "agent": "$AGENT_ESC",
+  "updatedAt": $UPDATED_AT,
+  "pid": $PID
+}
+EOF
+fi
+
+# Atomic rename ensures readers never see a partially-written file.
+mv -f "$TMP_FILE" "$STATUS_FILE"
+
+echo "reported: $STATE → $STATUS_FILE"

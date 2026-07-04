@@ -22,6 +22,9 @@ import type {
   WorkspaceSyncResult,
   RemoveOptions,
   WorkspaceMetaFile,
+  AgentStatus,
+  AgentState,
+  WorkspaceWithStatus,
 } from './types';
 
 // electron-store is CommonJS in the version pinned here; type it loosely to
@@ -215,6 +218,69 @@ export function markActive(id: string): void {
   ws.lastActiveAt = now;
   ws.updatedAt = now;
   writeAll(all);
+}
+
+// -----------------------------------------------------------------------
+// Agent status
+//
+// Each workspace directory MAY contain an `agent-status.json` file written
+// by an external agent (Claude Code / a shell script / etc.). We read it
+// on demand for `listWithStatus()`. Failures are non-fatal — a malformed
+// or missing file is treated as "no status".
+// -----------------------------------------------------------------------
+
+const AGENT_STATUS_FILENAME = 'agent-status.json';
+const VALID_STATES: readonly AgentState[] = [
+  'idle',
+  'running',
+  'waiting_input',
+  'completed',
+  'error',
+];
+
+async function readAgentStatus(workspaceDir: string): Promise<AgentStatus | null> {
+  const file = path.join(workspaceDir, AGENT_STATUS_FILENAME);
+  let content: string;
+  try {
+    content = await fs.readFile(file, 'utf-8');
+  } catch {
+    return null;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return null;
+  }
+
+  if (!parsed || typeof parsed !== 'object') return null;
+  const obj = parsed as Record<string, unknown>;
+
+  const state = obj.state;
+  const updatedAt = obj.updatedAt;
+  if (typeof state !== 'string') return null;
+  if (!VALID_STATES.includes(state as AgentState)) return null;
+  if (typeof updatedAt !== 'number' || !Number.isFinite(updatedAt)) return null;
+
+  return {
+    state: state as AgentState,
+    message: typeof obj.message === 'string' ? obj.message : undefined,
+    agent: typeof obj.agent === 'string' ? obj.agent : undefined,
+    updatedAt,
+    pid: typeof obj.pid === 'number' ? obj.pid : undefined,
+  };
+}
+
+/** Public: `list()` + each workspace's parsed `agent-status.json` (or null). */
+export async function listWithStatus(): Promise<WorkspaceWithStatus[]> {
+  const all = list();
+  return Promise.all(
+    all.map(async (ws) => ({
+      ...ws,
+      agentStatus: await readAgentStatus(ws.directory),
+    }))
+  );
 }
 
 // Test-only helpers (not exported to preload).

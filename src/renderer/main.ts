@@ -13,7 +13,13 @@
 //   - Detail "跳转到 tmux"     → the actual jump
 //   - Right-click list item   → in-DOM context menu (quick actions)
 
-import type { Workspace, RemoveOptions } from '../main/types';
+import type {
+  Workspace,
+  RemoveOptions,
+  AgentStatus,
+  AgentState,
+  WorkspaceWithStatus,
+} from '../main/types';
 
 // -----------------------------------------------------------------------
 // Preload API surface
@@ -24,7 +30,7 @@ interface JumpOutcome {
 }
 
 interface WorkspaceApi {
-  list(): Promise<Workspace[]>;
+  list(): Promise<WorkspaceWithStatus[]>;
   syncFromTmux(): Promise<void>;
   jump(id: string): Promise<JumpOutcome>;
   openInFinder(id: string): Promise<boolean>;
@@ -46,8 +52,15 @@ const api = window.api?.workspace;
 // -----------------------------------------------------------------------
 // State
 // -----------------------------------------------------------------------
-let workspaces: Workspace[] = [];
+let workspaces: WorkspaceWithStatus[] = [];
 let selectedId: string | null = null;
+
+// Renderer-side polling: workspace state (agent status especially) can change
+// out of band, so poll every 3 seconds while the window is alive. Main also
+// pushes `workspace:updated` after a tmux sync — we still hook that for
+// zero-latency refresh.
+const POLL_INTERVAL_MS = 3_000;
+const STALE_THRESHOLD_MS = 5 * 60_000;
 
 // -----------------------------------------------------------------------
 // DOM refs (set in init)
@@ -123,27 +136,114 @@ function formatDate(ts: number): string {
 }
 
 // -----------------------------------------------------------------------
+// Agent status helpers
+// -----------------------------------------------------------------------
+type AgentStatusKind = AgentState | 'stale';
+
+function isStale(status: AgentStatus): boolean {
+  return Date.now() - status.updatedAt > STALE_THRESHOLD_MS;
+}
+
+/** Effective state after applying stale detection. `null` when no status file
+ *  exists OR the reported state is `idle`. `idle` intentionally shows no dot
+ *  — the user shouldn't have to look at a "nothing is happening" indicator. */
+function effectiveKind(status: AgentStatus | null): AgentStatusKind | null {
+  if (!status) return null;
+  if (status.state === 'idle') return null;
+  return isStale(status) ? 'stale' : status.state;
+}
+
+const STATE_LABELS: Record<AgentStatusKind, string> = {
+  idle: '闲置',
+  running: '运行中',
+  waiting_input: '等待输入',
+  completed: '已完成',
+  error: '出错',
+  stale: '状态已陈旧',
+};
+
+function tooltipFor(status: AgentStatus): string {
+  const kind = effectiveKind(status);
+  if (!kind) return '';
+  const base = STATE_LABELS[kind];
+  const parts: string[] = [base];
+  if (status.message) parts.push(status.message);
+  parts.push(`${formatRelativeTime(status.updatedAt)}上报`);
+  return parts.join(' · ');
+}
+
+// -----------------------------------------------------------------------
 // Data
 // -----------------------------------------------------------------------
 async function refresh(): Promise<void> {
+  let next: WorkspaceWithStatus[];
   try {
-    workspaces = await api.list();
+    next = await api.list();
   } catch (err) {
     console.error('[main] workspace.list failed:', err);
-    workspaces = [];
+    next = [];
   }
+
+  const changed = !workspacesEqual(workspaces, next);
+  workspaces = next;
+
   // Preserve current selection if the workspace still exists; otherwise pick
   // the first one (or clear if the list is now empty).
+  const prevSelected = selectedId;
   if (selectedId && !workspaces.some((w) => w.id === selectedId)) {
     selectedId = null;
   }
   if (!selectedId && workspaces.length > 0) {
     selectedId = workspaces[0].id;
   }
+
+  if (!changed && prevSelected === selectedId) {
+    // Nothing meaningful changed — skip re-render so scroll/focus survive.
+    return;
+  }
   render();
 }
 
-function currentSelected(): Workspace | null {
+/** Structural equality good enough to skip a re-render when nothing the UI
+ *  reads has changed. Keeps polling cheap and non-disruptive. */
+function workspacesEqual(
+  a: WorkspaceWithStatus[],
+  b: WorkspaceWithStatus[]
+): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (
+      x.id !== y.id ||
+      x.name !== y.name ||
+      x.tmuxSessionName !== y.tmuxSessionName ||
+      x.lastActiveAt !== y.lastActiveAt ||
+      x.updatedAt !== y.updatedAt ||
+      !agentStatusEqual(x.agentStatus, y.agentStatus)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function agentStatusEqual(
+  a: AgentStatus | null,
+  b: AgentStatus | null
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.state === b.state &&
+    a.message === b.message &&
+    a.agent === b.agent &&
+    a.updatedAt === b.updatedAt &&
+    a.pid === b.pid
+  );
+}
+
+function currentSelected(): WorkspaceWithStatus | null {
   if (!selectedId) return null;
   return workspaces.find((w) => w.id === selectedId) ?? null;
 }
@@ -206,8 +306,9 @@ function renderList(): void {
   }
 }
 
-function makeListItem(ws: Workspace): HTMLLIElement {
+function makeListItem(ws: WorkspaceWithStatus): HTMLLIElement {
   const isActive = ws.id === selectedId;
+  const kind = effectiveKind(ws.agentStatus);
   const li = el<HTMLLIElement>('li', {
     class: 'workspace-list-item' + (isActive ? ' is-active' : ''),
     role: 'listitem',
@@ -218,12 +319,26 @@ function makeListItem(ws: Workspace): HTMLLIElement {
   });
 
   const row = el('div', { class: 'workspace-list-item-row' });
-  row.appendChild(
+
+  const titleWrap = el('div', { class: 'workspace-list-item-title-wrap' });
+  if (kind) {
+    const dot = el('span', {
+      class: `status-dot status-dot-${kind}`,
+      'aria-hidden': 'true',
+    });
+    if (ws.agentStatus) {
+      dot.title = tooltipFor(ws.agentStatus);
+    }
+    titleWrap.appendChild(dot);
+  }
+  titleWrap.appendChild(
     el('div', {
       class: 'workspace-list-item-title',
       text: ws.name,
     })
   );
+
+  row.appendChild(titleWrap);
   row.appendChild(
     el('div', {
       class: 'workspace-list-item-meta',
@@ -232,12 +347,21 @@ function makeListItem(ws: Workspace): HTMLLIElement {
   );
   li.appendChild(row);
 
+  // Subtitle: agent message overrides tmux session line when it exists.
+  const subtitleText =
+    ws.agentStatus?.message && ws.agentStatus.state !== 'idle'
+      ? ws.agentStatus.message
+      : ws.tmuxSessionName
+      ? `tmux · ${ws.tmuxSessionName}`
+      : '未关联 tmux';
   li.appendChild(
     el('div', {
-      class: 'workspace-list-item-subtitle',
-      text: ws.tmuxSessionName
-        ? `tmux · ${ws.tmuxSessionName}`
-        : '未关联 tmux',
+      class:
+        'workspace-list-item-subtitle' +
+        (ws.agentStatus?.message && ws.agentStatus.state !== 'idle'
+          ? ' is-agent-message'
+          : ''),
+      text: subtitleText,
     })
   );
 
@@ -304,6 +428,9 @@ function renderDetail(): void {
         : '未关联 tmux',
     })
   );
+  if (ws.agentStatus && effectiveKind(ws.agentStatus)) {
+    header.appendChild(makeAgentStatusRow(ws.agentStatus));
+  }
   inner.appendChild(header);
 
   // Directory section
@@ -411,6 +538,42 @@ function makeField(label: string, value: string): HTMLElement {
   box.appendChild(el('div', { class: 'detail-field-label', text: label }));
   box.appendChild(el('div', { class: 'detail-field-value', text: value }));
   return box;
+}
+
+function makeAgentStatusRow(status: AgentStatus): HTMLElement {
+  const kind = effectiveKind(status);
+  const row = el('div', {
+    class: 'detail-agent-status' + (kind ? ` is-${kind}` : ''),
+  });
+  if (kind) {
+    row.appendChild(
+      el('span', {
+        class: `status-dot status-dot-${kind}`,
+        'aria-hidden': 'true',
+      })
+    );
+    row.appendChild(
+      el('span', {
+        class: 'detail-agent-status-label',
+        text: STATE_LABELS[kind],
+      })
+    );
+  }
+  if (status.message) {
+    row.appendChild(
+      el('span', {
+        class: 'detail-agent-status-message',
+        text: status.message,
+      })
+    );
+  }
+  row.appendChild(
+    el('span', {
+      class: 'detail-agent-status-time',
+      text: `${formatRelativeTime(status.updatedAt)}上报`,
+    })
+  );
+  return row;
 }
 
 // -----------------------------------------------------------------------
@@ -743,6 +906,14 @@ function init(): void {
   api.onUpdated(() => {
     void refresh();
   });
+
+  // Poll every 3s so out-of-band changes (agent status file updates by an
+  // external process, tmux sessions coming/going, `lastActiveAt` bumps) are
+  // reflected in the UI without needing an IPC event. Cheap for the low
+  // number of workspaces we expect.
+  window.setInterval(() => {
+    void refresh();
+  }, POLL_INTERVAL_MS);
 
   void refresh();
 }
