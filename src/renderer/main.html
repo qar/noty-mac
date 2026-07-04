@@ -7,41 +7,34 @@
     <link rel="stylesheet" href="main.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <aside class="sidebar">
-        <div class="sidebar-brand">Noty</div>
-        <div class="sidebar-section-title">主导航</div>
-        <nav class="sidebar-nav" aria-label="主导航">
-          <a class="nav-item is-active" href="#workspaces" aria-current="page">
-            <span class="nav-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24">
-                <rect x="3" y="4" width="7" height="7" rx="1.5" />
-                <rect x="14" y="4" width="7" height="7" rx="1.5" />
-                <rect x="3" y="14" width="7" height="7" rx="1.5" />
-                <rect x="14" y="14" width="7" height="7" rx="1.5" />
-              </svg>
-            </span>
-            <span>工作区</span>
-          </a>
-        </nav>
+    <div class="app-shell" id="appShell">
+      <!-- List panel (left) — populated by renderer -->
+      <aside class="workspace-list-panel" id="listPanel">
+        <header class="list-panel-header">
+          <div class="list-panel-title">工作区</div>
+          <button
+            type="button"
+            class="icon-btn"
+            id="toolbarSyncBtn"
+            title="同步 tmux 到工作区"
+            aria-label="同步 tmux 到工作区"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3" />
+              <polyline points="18 3 18 7 14 7" />
+              <polyline points="6 21 6 17 10 17" />
+            </svg>
+          </button>
+        </header>
+        <ul class="workspace-list" id="workspaceList" role="list"></ul>
       </aside>
 
-      <main class="content">
-        <div class="content-inner">
-          <header class="page-header">
-            <h1 class="page-title">工作区</h1>
-            <div class="toolbar">
-              <button type="button" class="btn btn-primary" id="toolbarSyncBtn">
-                同步 tmux
-              </button>
-            </div>
-          </header>
-
-          <!-- Renderer main.ts (compiled to main.bundle.js) mounts empty
-               state or the workspace grid here. -->
-          <section id="workspaceRoot" aria-live="polite"></section>
-        </div>
-      </main>
+      <!-- Detail panel (right) — populated by renderer -->
+      <main
+        class="workspace-detail-panel"
+        id="detailPanel"
+        aria-live="polite"
+      ></main>
     </div>
 
     <script src="main.bundle.js"></script>
