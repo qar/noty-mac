@@ -1,4 +1,4 @@
-const { app, Tray, Menu, ipcMain, nativeImage, BrowserWindow } = require('electron');
+const { app, Tray, Menu, ipcMain, nativeImage, BrowserWindow, Notification } = require('electron');
 const { execFile } = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
@@ -6,6 +6,8 @@ const store = require('./store');
 const NtfyClient = require('./ntfy-client');
 const Updater = require('./updater');
 const { toggleWindow, getWindow } = require('./window');
+const { openMainWindow, hideMainWindow, getMainWindow, destroyMainWindow } = require('./main-window');
+const workspace = require('./workspace');
 
 function generateId() {
   return crypto.randomBytes(16).toString('hex');
@@ -256,6 +258,12 @@ app.on('window-all-closed', (e) => {
   e.preventDefault();
 });
 
+// macOS：Dock 图标被点或应用从后台切回时唤起主界面。tray-only 场景下
+// activate 不会触发；只有主窗口被打开过、Dock 图标存在时才有这条路径。
+app.on('activate', () => {
+  openMainWindow();
+});
+
 app.whenReady().then(() => {
   createTray();
   setupIPC();
@@ -315,6 +323,69 @@ function loadTrayTemplateImage() {
   return icon;
 }
 
+// -----------------------------------------------------------------------
+// Workspace: tmux → workspace sync
+//
+// Reads local tmux session names via `tmux list-sessions -F '#S'`, hands
+// them to the workspace data layer for idempotent reconciliation, then
+// posts a system notification summarising the delta (Q6 decision).
+// Red-line §11: this only runs a READ-ONLY tmux command; workspace.js
+// side-effects are limited to its own uuid directories.
+// -----------------------------------------------------------------------
+async function syncTmuxToWorkspaces() {
+  let sessionNames = [];
+  try {
+    const stdout = await execTmux(['list-sessions', '-F', '#S']);
+    sessionNames = stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+  } catch (error) {
+    if (error && error.message === 'tmux_not_found') {
+      new Notification({
+        title: 'Noty · 同步失败',
+        body: '未检测到 tmux，无法读取会话列表'
+      }).show();
+      return;
+    }
+    // `no server running on <socket>` is what tmux prints when nothing is
+    // attached — treat it as "zero sessions" rather than an error.
+    if (/no server running/i.test(error?.message || '')) {
+      sessionNames = [];
+    } else {
+      console.error('[workspace] tmux list-sessions failed:', error);
+      new Notification({
+        title: 'Noty · 同步失败',
+        body: '读取 tmux 会话时出错：' + (error?.message || 'unknown')
+      }).show();
+      return;
+    }
+  }
+
+  let result;
+  try {
+    result = await workspace.syncFromTmux(sessionNames);
+  } catch (error) {
+    console.error('[workspace] syncFromTmux failed:', error);
+    new Notification({
+      title: 'Noty · 同步失败',
+      body: '保存工作区时出错：' + (error?.message || 'unknown')
+    }).show();
+    return;
+  }
+
+  new Notification({
+    title: 'Noty · 同步完成',
+    body: `新增 ${result.added}，跳过 ${result.skipped}（共 ${sessionNames.length} 个 tmux session）`
+  }).show();
+
+  // Nudge the main window renderer to re-fetch (Step 4b will subscribe).
+  const win = getMainWindow();
+  if (win) {
+    win.webContents.send('workspace:updated');
+  }
+}
+
 function createTray() {
   // 创建托盘图标
   tray = new Tray(loadTrayTemplateImage());
@@ -325,27 +396,44 @@ function createTray() {
     toggleWindow(tray);
   });
 
-  // 右键菜单
+  // 右键菜单 — 与 workspace-mvp.md §Q3 定稿顺序对齐
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: '打开',
+      label: '打开通知面板',
       click: () => {
         toggleWindow(tray);
       }
     },
+    {
+      label: '打开主界面',
+      click: () => {
+        openMainWindow();
+      }
+    },
+    { type: 'separator' },
+    {
+      // Step 3c will drive `enabled` from a live tmux availability probe.
+      // For now the item is always enabled; if tmux is missing the click
+      // handler above surfaces a native notification.
+      label: '同步 tmux 到工作区',
+      click: () => {
+        void syncTmuxToWorkspaces();
+      }
+    },
+    { type: 'separator' },
     {
       label: '设置',
       click: () => {
         openSettingsWindow();
       }
     },
-    { type: 'separator' },
     {
       label: '退出',
       click: () => {
         if (ntfyClient) {
           ntfyClient.unsubscribeAll();
         }
+        destroyMainWindow();
         app.quit();
       }
     }
