@@ -5,7 +5,8 @@
     "output": "release"
   },
   "files": [
-    "src/**/*",
+    "dist/**/*",
+    "src/renderer/**/*",
     "assets/**/*",
     "package.json"
   ],

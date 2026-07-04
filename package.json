@@ -2,12 +2,16 @@
   "name": "noty-mac",
   "version": "1.2.3",
   "description": "macOS 菜单栏应用，用于显示 ntfy.sh 通知",
-  "main": "src/main/index.js",
+  "main": "dist/main/index.js",
   "scripts": {
-    "start": "electron .",
-    "dev": "electron . --enable-logging",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder --mac",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "build:main": "tsc",
+    "build": "npm run clean && npm run build:main",
+    "start": "npm run build && electron .",
+    "dev": "npm run build && electron . --enable-logging",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder --mac",
     "extract-asar": "cp -f release/mac-arm64/Noty.app/Contents/Resources/app.asar release/app.asar && echo 'Extracted app.asar to release/app.asar'"
   },
   "keywords": [
@@ -27,7 +31,10 @@
     "electron-store": "^8.1.0"
   },
   "devDependencies": {
+    "@types/node": "^26.1.0",
     "electron": "^28.3.3",
-    "electron-builder": "^26.8.1"
+    "electron-builder": "^26.8.1",
+    "esbuild": "^0.28.1",
+    "typescript": "^5.9.3"
   }
 }

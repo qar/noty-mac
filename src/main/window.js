@@ -1,4 +1,4 @@
-const { BrowserWindow } = require('electron');
+const { BrowserWindow, app } = require('electron');
 const path = require('path');
 
 let mainWindow = null;
@@ -22,7 +22,7 @@ function createWindow(tray) {
     }
   });
 
-  mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+  mainWindow.loadFile(path.join(app.getAppPath(), 'src/renderer/index.html'));
 
   // 窗口失焦时隐藏
   mainWindow.on('blur', () => {

@@ -382,7 +382,7 @@ function openSettingsWindow() {
     }
   });
 
-  settingsWindow.loadFile(path.join(__dirname, '../renderer/settings.html'));
+  settingsWindow.loadFile(path.join(app.getAppPath(), 'src/renderer/settings.html'));
 
   settingsWindow.on('closed', () => {
     settingsWindow = null;
