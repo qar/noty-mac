@@ -10,6 +10,7 @@ const { openMainWindow, hideMainWindow, getMainWindow, destroyMainWindow } = req
 const workspace = require('./workspace');
 const { probeTmux } = require('./tmux-probe');
 const { registerWorkspaceIpc } = require('./ipc-workspace');
+const { registerIntegrationIpc } = require('./ipc-integration');
 
 function generateId() {
   return crypto.randomBytes(16).toString('hex');
@@ -318,6 +319,7 @@ app.whenReady().then(async () => {
     jumpToTmuxSession,
     syncTmuxToWorkspaces,
   });
+  registerIntegrationIpc();
   updateTrayIcon();
 
   updater = new Updater();

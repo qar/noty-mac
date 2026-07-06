@@ -249,6 +249,102 @@
       border-radius: 6px;
       line-height: 1.4;
     }
+
+    /* ----- AI 集成 wizard --------------------------------------- */
+    .tutorial-code-row {
+      display: flex;
+      align-items: stretch;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .tutorial-code-row .tutorial-code {
+      flex: 1;
+      margin-top: 0;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+
+    .copy-btn {
+      flex-shrink: 0;
+      align-self: stretch;
+      padding: 0 12px;
+      background: #007AFF;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .copy-btn:hover {
+      background: #0064d6;
+    }
+
+    .copy-btn.is-copied {
+      background: #34C759;
+    }
+
+    .link-btn {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 0;
+      background: transparent;
+      border: none;
+      color: #007AFF;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .link-btn:hover {
+      text-decoration: underline;
+    }
+
+    .integration-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 10px;
+      font-size: 12px;
+      color: #666;
+    }
+
+    .integration-status .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ccc;
+      flex-shrink: 0;
+    }
+
+    .integration-status.is-ok .status-dot {
+      background: #34C759;
+    }
+
+    .integration-status.is-ok {
+      color: #2d8a4e;
+    }
+
+    .integration-status.is-warn .status-dot {
+      background: #FF9500;
+    }
+
+    .integration-status.is-warn {
+      color: #a05a00;
+    }
+
+    .integration-status.is-missing .status-dot {
+      background: #999;
+    }
+
+    .integration-status .status-path {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      color: #444;
+      word-break: break-all;
+    }
   </style>
 </head>
 <body>
@@ -307,6 +403,47 @@
 
           <div class="tutorial-note">
             tmux/kitty 仅影响“点击通知后跳转终端上下文”的增强能力。即使没有 tmux 或 kitty，你仍然可以正常接收通知。
+          </div>
+        </div>
+      </div>
+
+      <!-- AI 集成 (noty-status + Claude Code) -->
+      <div class="section">
+        <div class="section-title">AI 集成</div>
+        <div class="tutorial-group">
+          <div class="tutorial-block">
+            <div class="tutorial-block-title">第 1 步：把 noty-status 链接到 PATH</div>
+            <div class="tutorial-block-text">
+              Noty 已内置 <code>noty-status</code> 上报脚本。执行下面这行命令，把它链接到 <code>~/.local/bin/</code>。你可以随时 audit，Noty 不会自动执行它。
+            </div>
+            <div class="tutorial-code-row">
+              <div class="tutorial-code" id="integrationInstallCmd">加载中…</div>
+              <button type="button" class="copy-btn" data-copy-target="integrationInstallCmd">复制</button>
+            </div>
+            <div class="integration-status" id="integrationInstallStatus">
+              <span class="status-dot"></span>
+              <span>检测中…</span>
+            </div>
+          </div>
+
+          <div class="tutorial-block">
+            <div class="tutorial-block-title">第 2 步：把片段追加到 Claude Code 的 CLAUDE.md</div>
+            <div class="tutorial-block-text">
+              复制下面这段，追加到 <code>~/.claude/CLAUDE.md</code>。这段被 <code>&lt;!-- BEGIN NOTY-STATUS --&gt;</code> 注释标记包裹，你和 Noty 都能识别。
+            </div>
+            <div class="tutorial-code-row">
+              <div class="tutorial-code" id="integrationSnippet">加载中…</div>
+              <button type="button" class="copy-btn" data-copy-target="integrationSnippet">复制</button>
+            </div>
+            <button type="button" class="link-btn" id="openClaudeDirBtn">在 Finder 中打开 ~/.claude/</button>
+            <div class="integration-status" id="integrationClaudeStatus">
+              <span class="status-dot"></span>
+              <span>检测中…</span>
+            </div>
+          </div>
+
+          <div class="tutorial-note">
+            Noty 不会自动写入 <code>~/.local/bin/</code> 或 <code>~/.claude/</code>；上面两处复制粘贴是唯一的写路径。切回本窗口时会自动重新检测状态。
           </div>
         </div>
       </div>

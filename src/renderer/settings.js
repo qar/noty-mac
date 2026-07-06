@@ -8,6 +8,8 @@ async function init() {
   updateToggles();
   setupEventListeners();
   await loadVersionInfo();
+  await renderIntegration();
+  setupIntegrationEvents();
 }
 
 // 加载数据
@@ -230,3 +232,123 @@ async function loadVersionInfo() {
 
 // 启动应用
 init();
+
+// ---------------------------------------------------------------
+// AI 集成 wizard (Settings > AI 集成)
+//
+// Read-only detection + copy-to-clipboard. Never writes to
+// ~/.local/bin/ or ~/.claude/; Noty policy — see docs/agent-status.md
+// and the red line in docs/workspace-mvp.md §11.
+// ---------------------------------------------------------------
+
+async function renderIntegration() {
+  if (!window.api?.integration) return;
+  let data;
+  try {
+    data = await window.api.integration.detect();
+  } catch (err) {
+    console.error('[settings] integration.detect failed:', err);
+    return;
+  }
+
+  const cmdEl = document.getElementById('integrationInstallCmd');
+  if (cmdEl) {
+    cmdEl.textContent = data.installCommand;
+    cmdEl.dataset.copyText = data.installCommand;
+  }
+
+  const snippetEl = document.getElementById('integrationSnippet');
+  if (snippetEl) {
+    snippetEl.textContent = data.snippet || '（未找到片段模板）';
+    snippetEl.dataset.copyText = data.snippet || '';
+  }
+
+  const installStatus = document.getElementById('integrationInstallStatus');
+  if (installStatus) {
+    const { at, isOurs } = data.installed;
+    installStatus.className = 'integration-status';
+    const dot = '<span class="status-dot"></span>';
+    if (at && isOurs) {
+      installStatus.classList.add('is-ok');
+      installStatus.innerHTML =
+        dot + '已安装 · <span class="status-path">' + escapeHtml(at) + '</span>';
+    } else if (at) {
+      installStatus.classList.add('is-warn');
+      installStatus.innerHTML =
+        dot + '已存在其他 <code>noty-status</code> · <span class="status-path">' +
+        escapeHtml(at) + '</span>（可能是你自定义的版本）';
+    } else {
+      installStatus.classList.add('is-missing');
+      installStatus.innerHTML = dot + '未检测到 · 执行上面的命令来安装';
+    }
+  }
+
+  const claudeStatus = document.getElementById('integrationClaudeStatus');
+  if (claudeStatus) {
+    const dot = '<span class="status-dot"></span>';
+    const { path, exists, snippetInstalled } = data.claudeMd;
+    claudeStatus.className = 'integration-status';
+    if (snippetInstalled) {
+      claudeStatus.classList.add('is-ok');
+      claudeStatus.innerHTML =
+        dot + '已追加到 <span class="status-path">' + escapeHtml(path) + '</span>';
+    } else if (exists) {
+      claudeStatus.classList.add('is-warn');
+      claudeStatus.innerHTML =
+        dot + 'CLAUDE.md 存在，但未找到 <code>&lt;!-- BEGIN NOTY-STATUS --&gt;</code> 标记';
+    } else {
+      claudeStatus.classList.add('is-missing');
+      claudeStatus.innerHTML =
+        dot + '未检测到 <span class="status-path">' + escapeHtml(path) + '</span>';
+    }
+  }
+}
+
+function setupIntegrationEvents() {
+  if (!window.api?.integration) return;
+
+  document.querySelectorAll('.copy-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const targetId = btn.getAttribute('data-copy-target');
+      if (!targetId) return;
+      const target = document.getElementById(targetId);
+      const text = target?.dataset.copyText || target?.textContent || '';
+      if (!text) return;
+
+      const ok = await window.api.integration.copy(text);
+      const orig = btn.textContent;
+      btn.textContent = ok ? '已复制' : '失败';
+      btn.classList.add('is-copied');
+      setTimeout(() => {
+        btn.textContent = orig;
+        btn.classList.remove('is-copied');
+      }, 1500);
+    });
+  });
+
+  const openBtn = document.getElementById('openClaudeDirBtn');
+  openBtn?.addEventListener('click', async () => {
+    const result = await window.api.integration.openClaudeDir();
+    if (!result?.opened) {
+      alert(
+        '无法打开 ~/.claude/：' + (result?.reason || '目录可能不存在') +
+        '\n\n提示：先在终端里 `mkdir -p ~/.claude` 或启动一次 Claude Code 让它自动创建。'
+      );
+    }
+  });
+
+  // Re-detect when the window regains focus (user just pasted the install
+  // command in a terminal and switched back).
+  window.addEventListener('focus', () => {
+    void renderIntegration();
+  });
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}

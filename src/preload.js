@@ -57,5 +57,12 @@ contextBridge.exposeInMainWorld('api', {
     onUpdated: (callback) => {
       ipcRenderer.on('workspace:updated', () => callback());
     }
+  },
+
+  // AI 集成向导 (Settings > AI 集成)
+  integration: {
+    detect: () => ipcRenderer.invoke('integration:detect'),
+    copy: (text) => ipcRenderer.invoke('integration:copy', text),
+    openClaudeDir: () => ipcRenderer.invoke('integration:open-claude-dir')
   }
 });

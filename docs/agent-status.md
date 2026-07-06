@@ -39,16 +39,38 @@ Noty 只**读取**这个文件，绝对不修改，也不写它。上报完全�
 
 Noty 项目里附带了一个 bash 上报脚本，位于 `scripts/noty-status`。无依赖（只需要 `bash` + `tmux` + `date`），能被任何 agent 直接调用。
 
-### 安装
+### 安装（推荐：Noty Settings 向导）
 
-把仓库里的 `scripts/noty-status` 复制或者软链到你 PATH 上：
+打开 **Noty · 设置 · AI 集成**，会看到两步向导：
+
+1. **第 1 步**：把 `noty-status` 链接到 PATH。点旁边的 [复制]，粘贴到终端执行。命令的形状是：
+
+   ```bash
+   mkdir -p ~/.local/bin && ln -sf '<noty-status 源路径>' ~/.local/bin/noty-status
+   ```
+
+   源路径在 dev 阶段是仓库里的 `scripts/noty-status`，打包后是 `Noty.app/Contents/Resources/noty-status`。Settings 向导会自动填对。
+
+2. **第 2 步**：把推荐的 CLAUDE.md 片段追加到 `~/.claude/CLAUDE.md`。点 [复制] 后自己去粘贴。片段被 `<!-- BEGIN NOTY-STATUS -->` 注释标记包裹，Noty 只用它检测"是否已安装"，永远不会自动写入。
+
+安装完成后切回 Settings 窗口（focus 事件），状态点会自动变绿。
+
+**Noty 承诺不会做的事**（跟"恶意程序"划清界限）：
+- 不写 `~/.local/bin/`
+- 不写 `~/.claude/`
+- 不改 shell 配置（`.zshrc` / `.bashrc`）
+- 不在后台自动运行 `noty-status`
+
+### 安装（手动 / 高级用法）
+
+如果你不用 Noty 的 Settings 向导：
 
 ```bash
-# 假设你的项目根目录是 ~/projects/noty-mac
-ln -sf ~/projects/noty-mac/scripts/noty-status /usr/local/bin/noty-status
+# 假设仓库在 ~/projects/noty-mac
+ln -sf ~/projects/noty-mac/scripts/noty-status ~/.local/bin/noty-status
 ```
 
-或者直接把 `scripts/` 加到 `$PATH`（在 `.zshrc` / `.bashrc` 里）。
+或者把 `scripts/` 加到 `$PATH`（在 `.zshrc` / `.bashrc` 里）。
 
 ### 用法
 

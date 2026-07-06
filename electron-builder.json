@@ -10,6 +10,12 @@
     "assets/**/*",
     "package.json"
   ],
+  "extraResources": [
+    {
+      "from": "scripts/noty-status",
+      "to": "noty-status"
+    }
+  ],
   "afterPack": "./build/afterPack.js",
   "mac": {
     "target": ["dmg"],
