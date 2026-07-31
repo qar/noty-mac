@@ -1,5 +1,66 @@
-<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-  <rect x="8" y="10" width="16" height="14" rx="2" fill="none" stroke="black" stroke-width="2"/>
-  <path d="M 12 10 L 12 8 Q 12 6 14 6 L 18 6 Q 20 6 20 8 L 20 10" fill="none" stroke="black" stroke-width="2"/>
-  <circle cx="16" cy="26" r="2" fill="black"/>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="1024"
+  height="1024"
+  viewBox="0 0 1024 1024"
+  role="img"
+  aria-labelledby="title description"
+>
+  <title id="title">Noty app icon</title>
+  <desc id="description">A sharp white N crossed by a blue signal ribbon on a graphite macOS-style tile.</desc>
+
+  <defs>
+    <linearGradient id="tile" x1="512" y1="60" x2="512" y2="964" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#25282D"/>
+      <stop offset="1" stop-color="#101216"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="512" y1="72" x2="512" y2="952" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.18"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.04"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.24"/>
+    </linearGradient>
+    <filter id="tile-shadow" x="0" y="0" width="1024" height="1024" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="28" stdDeviation="28" flood-color="#000000" flood-opacity="0.34"/>
+    </filter>
+    <filter id="mark-shadow" x="190" y="190" width="650" height="650" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000000" flood-opacity="0.32"/>
+    </filter>
+    <clipPath id="tile-clip">
+      <rect x="72" y="60" width="880" height="880" rx="208"/>
+    </clipPath>
+  </defs>
+
+  <g filter="url(#tile-shadow)">
+    <rect x="72" y="60" width="880" height="880" rx="208" fill="url(#tile)"/>
+    <rect
+      x="74"
+      y="62"
+      width="876"
+      height="876"
+      rx="206"
+      fill="none"
+      stroke="url(#rim)"
+      stroke-width="4"
+    />
+  </g>
+
+  <g clip-path="url(#tile-clip)" opacity="0.7">
+    <path d="M72 710L952 408V940H72Z" fill="#000000" fill-opacity="0.12"/>
+  </g>
+
+  <g filter="url(#mark-shadow)">
+    <rect x="270" y="278" width="132" height="468" rx="66" fill="#F5F5F7"/>
+    <rect x="622" y="278" width="132" height="468" rx="66" fill="#F5F5F7"/>
+    <path
+      d="M338 346L686 678"
+      fill="none"
+      stroke="#0A84FF"
+      stroke-width="136"
+      stroke-linecap="round"
+    />
+  </g>
+
+  <circle cx="744" cy="266" r="78" fill="#181A1F"/>
+  <circle cx="744" cy="266" r="56" fill="#0A84FF"/>
+  <circle cx="726" cy="246" r="13" fill="#FFFFFF" fill-opacity="0.34"/>
 </svg>

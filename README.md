@@ -54,7 +54,8 @@ noty-mac/
 │   │   └── styles.css     # 样式
 │   └── preload.js         # IPC 预加载脚本
 ├── assets/                # 资源文件
-│   ├── icon.png           # 托盘图标
+│   ├── icon.png           # 应用图标
+│   ├── tray-template.png  # 菜单栏模板图标
 │   └── icon-unread.png    # 未读状态图标
 └── package.json
 ```
