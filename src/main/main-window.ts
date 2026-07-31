@@ -13,6 +13,7 @@
 
 import { BrowserWindow, app } from 'electron';
 import * as path from 'path';
+import { setDockIcon } from './app-icon';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -93,7 +94,10 @@ export function openMainWindow(): BrowserWindow {
   mainWindow.focus();
   // Only call show() on macOS; hide/show on other platforms are no-ops but
   // typed as maybe-undefined.
-  app.dock?.show().catch(() => { /* ignore */ });
+  setDockIcon();
+  app.dock?.show()
+    .then(() => { setDockIcon(); })
+    .catch(() => { /* ignore */ });
   return mainWindow;
 }
 

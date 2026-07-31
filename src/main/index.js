@@ -11,6 +11,7 @@ const workspace = require('./workspace');
 const { probeTmux } = require('./tmux-probe');
 const { registerWorkspaceIpc } = require('./ipc-workspace');
 const { registerIntegrationIpc } = require('./ipc-integration');
+const { setDockIcon } = require('./app-icon');
 
 function generateId() {
   return crypto.randomBytes(16).toString('hex');
@@ -309,6 +310,8 @@ app.on('activate', () => {
 });
 
 app.whenReady().then(async () => {
+  setDockIcon();
+
   // Prime the tmux availability cache before wiring the tray so the very
   // first right-click already has an accurate `enabled` state.
   await refreshTmuxProbe();

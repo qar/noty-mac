@@ -1,4 +1,6 @@
-<svg width="100%" height="100%" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
-  <!-- Egyptian cat silhouette (Bastet-inspired), optimized for tray size -->
-  <path d="M8.0 0.8L6.7 3.1L5.6 1.0L4.1 3.9L4.5 6.0L4.5 10.9L3.1 13.7L4.2 14.3L5.1 13.0L5.9 10.4L5.9 6.2L6.7 5.1L9.3 5.1L10.1 6.2L10.1 10.4L10.9 13.0L11.8 14.3L12.9 13.7L11.5 10.9L11.5 6.0L11.9 3.9L10.4 1.0L9.3 3.1ZM4.8 4.7L4.8 6.0L5.7 5.2ZM11.2 4.7L10.3 5.2L11.2 6.0ZM6.5 14.0L6.5 15.1L7.4 15.2L7.6 14.0ZM8.4 14.0L8.6 15.2L9.5 15.1L9.5 14.0ZM12.2 10.8L13.7 11.5L14.5 13.0L13.5 13.8L11.8 13.5ZM3.8 10.8L2.3 11.5L1.5 13.0L2.5 13.8L4.2 13.5Z" fill="black"/>
+<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+  <rect x="2.4" y="3.1" width="2.5" height="10.7" rx="1.25" fill="black"/>
+  <rect x="10.1" y="3.1" width="2.5" height="10.7" rx="1.25" fill="black"/>
+  <path d="M3.75 4.25L11.25 12.65" fill="none" stroke="black" stroke-width="2.7" stroke-linecap="round"/>
+  <circle cx="13.55" cy="2.45" r="1.35" fill="black"/>
 </svg>
