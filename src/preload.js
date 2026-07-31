@@ -55,7 +55,9 @@ contextBridge.exposeInMainWorld('api', {
     rename: (id, name) => ipcRenderer.invoke('workspace:rename', id, name),
     remove: (id, opts) => ipcRenderer.invoke('workspace:remove', id, opts),
     onUpdated: (callback) => {
-      ipcRenderer.on('workspace:updated', () => callback());
+      const listener = () => callback();
+      ipcRenderer.on('workspace:updated', listener);
+      return () => ipcRenderer.removeListener('workspace:updated', listener);
     }
   },
 

@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
     <title>Noty</title>
     <link rel="stylesheet" href="main.css" />
   </head>
@@ -13,35 +17,7 @@
          elements below the header set `no-drag` so they remain clickable. -->
     <div class="title-bar-drag" aria-hidden="true"></div>
 
-    <div class="app-shell" id="appShell">
-      <!-- List panel (left) — populated by renderer -->
-      <aside class="workspace-list-panel" id="listPanel">
-        <header class="list-panel-header">
-          <div class="list-panel-title">工作区</div>
-          <button
-            type="button"
-            class="icon-btn"
-            id="toolbarSyncBtn"
-            title="同步 tmux 到工作区"
-            aria-label="同步 tmux 到工作区"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3" />
-              <polyline points="18 3 18 7 14 7" />
-              <polyline points="6 21 6 17 10 17" />
-            </svg>
-          </button>
-        </header>
-        <ul class="workspace-list" id="workspaceList" role="list"></ul>
-      </aside>
-
-      <!-- Detail panel (right) — populated by renderer -->
-      <main
-        class="workspace-detail-panel"
-        id="detailPanel"
-        aria-live="polite"
-      ></main>
-    </div>
+    <div id="root"></div>
 
     <script src="main.bundle.js"></script>
   </body>

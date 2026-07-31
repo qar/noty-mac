@@ -68,7 +68,8 @@
 
   /* Layout constants specific to the main window */
   --title-bar-height: 44px;   /* hiddenInset traffic-light reserve */
-  --list-panel-width: 280px;
+  --project-panel-width: 240px;
+  --workspace-panel-width: 280px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -116,6 +117,10 @@ body {
   overflow: hidden;
 }
 
+#root {
+  height: 100vh;
+}
+
 button {
   font-family: inherit;
   font-size: inherit;
@@ -133,15 +138,18 @@ code {
   font-family: var(--font-mono);
 }
 
-/* ----- App shell (list + detail) ------------------------------ */
+/* ----- App shell (projects + workspaces + detail) ------------- */
 .app-shell {
   display: grid;
-  grid-template-columns: var(--list-panel-width) 1fr;
+  grid-template-columns:
+    var(--project-panel-width)
+    var(--workspace-panel-width)
+    minmax(360px, 1fr);
   height: 100vh;
 }
 
 .app-shell.is-empty {
-  grid-template-columns: 1fr;
+  grid-template-columns: var(--project-panel-width) minmax(0, 1fr);
 }
 
 /* ============================================================
@@ -171,6 +179,7 @@ select,
 textarea,
 a,
 dialog,
+.project-list-item,
 .workspace-list-item,
 .context-menu,
 .app-dialog,
@@ -179,8 +188,9 @@ dialog,
 }
 
 /* ============================================================
- * LEFT: workspace list panel
+ * LEFT: project list panel
  * ============================================================ */
+.project-list-panel,
 .workspace-list-panel {
   display: flex;
   flex-direction: column;
@@ -188,6 +198,11 @@ dialog,
   border-right: 1px solid var(--color-divider);
 }
 
+.project-list-panel {
+  background: var(--color-bg-subtle);
+}
+
+.project-panel-header,
 .list-panel-header {
   display: flex;
   align-items: center;
@@ -200,12 +215,95 @@ dialog,
   padding-left: var(--space-4);
 }
 
+.project-panel-title,
 .list-panel-title {
   font-size: var(--fs-title);
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   color: var(--color-text-primary);
 }
+
+.project-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-1) 0 var(--space-2);
+}
+
+.project-list-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 52px;
+  padding: var(--space-2) var(--space-4);
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+
+.project-list-item:hover {
+  background: var(--color-bg-subtle);
+}
+
+.project-list-item.is-active {
+  background: var(--color-accent-subtle);
+  border-left-color: var(--color-accent);
+}
+
+.project-list-item-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  color: var(--color-text-secondary);
+  stroke-width: 1.75;
+}
+
+.project-list-item.is-active .project-list-item-icon {
+  color: var(--color-accent);
+}
+
+.project-list-item-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.project-list-item-title {
+  display: block;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-list-item.is-active .project-list-item-title {
+  color: var(--color-accent);
+}
+
+.project-list-item-path {
+  display: block;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-list-item:focus-visible,
+.workspace-list-item:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: -1px;
+}
+
+/* ============================================================
+ * MIDDLE: tmux session workspace list panel
+ * ============================================================ */
 
 .icon-btn {
   display: inline-flex;
@@ -238,6 +336,16 @@ dialog,
   stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.icon-btn svg.is-spinning {
+  animation: control-spin 900ms linear infinite;
+}
+
+@keyframes control-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .workspace-list {
@@ -395,7 +503,7 @@ dialog,
 .detail-title {
   font-size: var(--fs-page-title);
   font-weight: 600;
-  letter-spacing: -0.015em;
+  letter-spacing: 0;
   line-height: 1.25;
   color: var(--color-text-primary);
   word-break: break-word;
@@ -550,6 +658,18 @@ dialog,
     border-color var(--motion-fast) var(--ease-standard);
 }
 
+.btn svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  stroke-width: 1.75;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .btn-primary {
   background: var(--color-accent);
   color: var(--color-text-inverse);
@@ -563,18 +683,13 @@ dialog,
   background: var(--color-accent-pressed);
 }
 
-.btn-primary:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
 .btn-secondary {
   background: transparent;
   border: 1px solid var(--color-border-strong);
   color: var(--color-text-primary);
 }
 
-.btn-secondary:hover {
+.btn-secondary:hover:not(:disabled) {
   background: var(--color-bg-subtle);
 }
 
@@ -584,7 +699,7 @@ dialog,
   color: var(--color-danger);
 }
 
-.btn-danger:hover {
+.btn-danger:hover:not(:disabled) {
   background: rgba(255, 69, 58, 0.08);
 }
 
@@ -594,7 +709,7 @@ dialog,
 
 /* Full-window empty state — shown when there are 0 workspaces. */
 .empty-state-full {
-  grid-column: 1 / -1;
+  grid-column: 2 / -1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -700,6 +815,7 @@ dialog,
   border-radius: var(--radius-lg);
   background: var(--color-bg-elevated);
   color: var(--color-text-primary);
+  margin: auto;
   padding: var(--space-6);
   min-width: 360px;
   max-width: 420px;
