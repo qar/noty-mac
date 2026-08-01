@@ -1,16 +1,18 @@
-import { Folder } from 'lucide-react';
+import { Folder, Settings } from 'lucide-react';
 import type { Project } from '../workspace-ui';
 
 interface ProjectPanelProps {
   projects: readonly Project[];
   selectedId: string;
   onSelect(id: string): void;
+  onSettings(): void;
 }
 
 export function ProjectPanel({
   projects,
   selectedId,
   onSelect,
+  onSettings,
 }: ProjectPanelProps) {
   return (
     <aside className="project-list-panel" aria-labelledby="projectPanelTitle">
@@ -44,6 +46,16 @@ export function ProjectPanel({
           );
         })}
       </ul>
+      <footer className="project-panel-footer">
+        <button
+          type="button"
+          className="project-settings-button"
+          onClick={onSettings}
+        >
+          <Settings aria-hidden="true" />
+          <span>设置</span>
+        </button>
+      </footer>
     </aside>
   );
 }

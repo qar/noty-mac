@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { WorkspaceWithStatus } from '../main/types';
 import { ProjectPanel } from './components/project-panel';
+import { SettingsSidebar } from './components/settings/settings-sidebar';
+import { SettingsView } from './components/settings/settings-view';
+import type { SettingsTab } from './components/settings/settings-navigation';
 import { WorkspacePanel } from './components/workspace-panel';
 import {
   EmptyWorkspaceState,
@@ -15,12 +18,12 @@ import {
 import {
   MOCK_PROJECTS,
   POLL_INTERVAL_MS,
-  type WorkspaceApi,
 } from './workspace-ui';
+import type { DashboardView } from './renderer-api';
 
 type LoadState = 'loading' | 'ready' | 'error';
 
-const api = window.api?.workspace as WorkspaceApi | undefined;
+const workspaceApi = window.api?.workspace;
 
 export function WorkspaceApp() {
   const [workspaces, setWorkspaces] = useState<WorkspaceWithStatus[]>([]);
@@ -28,19 +31,33 @@ export function WorkspaceApp() {
     null
   );
   const [selectedProjectId, setSelectedProjectId] = useState(MOCK_PROJECTS[0].id);
-  const [loadState, setLoadState] = useState<LoadState>(api ? 'loading' : 'error');
+  const [activeView, setActiveView] = useState<DashboardView>('workspace');
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
+  const [loadState, setLoadState] = useState<LoadState>(
+    workspaceApi ? 'loading' : 'error'
+  );
   const [syncing, setSyncing] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renaming, setRenaming] = useState<WorkspaceWithStatus | null>(null);
   const [deleting, setDeleting] = useState<WorkspaceWithStatus | null>(null);
 
+  const showDashboardView = useCallback((view: DashboardView): void => {
+    setActiveView(view);
+    window.api?.dashboard?.setView(view);
+    if (view === 'settings') {
+      setContextMenu(null);
+      setRenaming(null);
+      setDeleting(null);
+    }
+  }, []);
+
   const refresh = useCallback(async (): Promise<void> => {
-    if (!api) {
+    if (!workspaceApi) {
       setLoadState('error');
       return;
     }
     try {
-      const next = await api.list();
+      const next = await workspaceApi.list();
       // Keep relative timestamps and stale agent states moving with the poll.
       setWorkspaces(next);
       setSelectedWorkspaceId((current) => {
@@ -57,9 +74,9 @@ export function WorkspaceApp() {
   }, []);
 
   useEffect(() => {
-    if (!api) return;
+    if (!workspaceApi) return;
     void refresh();
-    const unsubscribe = api.onUpdated(() => {
+    const unsubscribe = workspaceApi.onUpdated(() => {
       void refresh();
     });
     const poll = window.setInterval(() => {
@@ -71,6 +88,31 @@ export function WorkspaceApp() {
     };
   }, [refresh]);
 
+  useEffect(() => {
+    const dashboardApi = window.api?.dashboard;
+    if (!dashboardApi) return;
+    let active = true;
+    const navigate = (view: DashboardView): void => {
+      if (!active || (view !== 'workspace' && view !== 'settings')) return;
+      setActiveView(view);
+      if (view === 'settings') {
+        setContextMenu(null);
+        setRenaming(null);
+        setDeleting(null);
+      }
+    };
+
+    dashboardApi
+      .getInitialView()
+      .then(navigate)
+      .catch((error) => console.error('[main] dashboard initial view failed:', error));
+    const unsubscribe = dashboardApi.onNavigate(navigate);
+    return () => {
+      active = false;
+      unsubscribe?.();
+    };
+  }, []);
+
   const selectedWorkspace = useMemo(
     () =>
       workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ??
@@ -79,10 +121,10 @@ export function WorkspaceApp() {
   );
 
   const syncWorkspaces = useCallback(async (): Promise<void> => {
-    if (!api || syncing) return;
+    if (!workspaceApi || syncing) return;
     setSyncing(true);
     try {
-      await api.syncFromTmux();
+      await workspaceApi.syncFromTmux();
       await refresh();
     } catch (error) {
       console.error('[main] syncFromTmux failed:', error);
@@ -93,9 +135,9 @@ export function WorkspaceApp() {
 
   const jumpToWorkspace = useCallback(
     async (workspace: WorkspaceWithStatus): Promise<void> => {
-      if (!api) return;
+      if (!workspaceApi) return;
       try {
-        const result = await api.jump(workspace.id);
+        const result = await workspaceApi.jump(workspace.id);
         if (result.success) {
           await refresh();
           return;
@@ -126,9 +168,9 @@ export function WorkspaceApp() {
   );
 
   const openInFinder = useCallback(async (workspace: WorkspaceWithStatus) => {
-    if (!api) return;
+    if (!workspaceApi) return;
     try {
-      const opened = await api.openInFinder(workspace.id);
+      const opened = await workspaceApi.openInFinder(workspace.id);
       if (!opened) alert('无法打开该工作区目录（可能已被删除）。');
     } catch (error) {
       console.error('[main] openInFinder failed:', error);
@@ -146,8 +188,8 @@ export function WorkspaceApp() {
 
   const renameWorkspace = useCallback(
     async (workspace: WorkspaceWithStatus, name: string): Promise<void> => {
-      if (!api) return;
-      await api.rename(workspace.id, name);
+      if (!workspaceApi) return;
+      await workspaceApi.rename(workspace.id, name);
       await refresh();
     },
     [refresh]
@@ -158,8 +200,8 @@ export function WorkspaceApp() {
       workspace: WorkspaceWithStatus,
       deleteDirectory: boolean
     ): Promise<void> => {
-      if (!api) return;
-      await api.remove(workspace.id, { deleteDir: deleteDirectory });
+      if (!workspaceApi) return;
+      await workspaceApi.remove(workspace.id, { deleteDir: deleteDirectory });
       await refresh();
     },
     [refresh]
@@ -172,16 +214,33 @@ export function WorkspaceApp() {
       : loadState === 'error'
         ? 'error'
         : 'empty';
+  const shellStateClass =
+    activeView === 'settings'
+      ? ' is-settings'
+      : hasWorkspaces
+        ? ''
+        : ' is-empty';
 
   return (
     <>
-      <div className={`app-shell${hasWorkspaces ? '' : ' is-empty'}`}>
-        <ProjectPanel
-          projects={MOCK_PROJECTS}
-          selectedId={selectedProjectId}
-          onSelect={setSelectedProjectId}
-        />
-        {hasWorkspaces ? (
+      <div className={`app-shell${shellStateClass}`}>
+        {activeView === 'settings' ? (
+          <SettingsSidebar
+            activeTab={settingsTab}
+            onSelect={setSettingsTab}
+            onBack={() => showDashboardView('workspace')}
+          />
+        ) : (
+          <ProjectPanel
+            projects={MOCK_PROJECTS}
+            selectedId={selectedProjectId}
+            onSelect={setSelectedProjectId}
+            onSettings={() => showDashboardView('settings')}
+          />
+        )}
+        {activeView === 'settings' ? (
+          <SettingsView activeTab={settingsTab} />
+        ) : hasWorkspaces ? (
           <>
             <WorkspacePanel
               workspaces={workspaces}
@@ -212,7 +271,7 @@ export function WorkspaceApp() {
         )}
       </div>
 
-      {contextMenu ? (
+      {activeView === 'workspace' && contextMenu ? (
         <WorkspaceContextMenu
           state={contextMenu}
           onClose={() => setContextMenu(null)}
@@ -224,7 +283,7 @@ export function WorkspaceApp() {
         />
       ) : null}
 
-      {renaming ? (
+      {activeView === 'workspace' && renaming ? (
         <RenameDialog
           key={renaming.id}
           workspace={renaming}
@@ -233,7 +292,7 @@ export function WorkspaceApp() {
         />
       ) : null}
 
-      {deleting ? (
+      {activeView === 'workspace' && deleting ? (
         <DeleteDialog
           key={deleting.id}
           workspace={deleting}

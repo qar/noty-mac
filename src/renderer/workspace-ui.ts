@@ -1,33 +1,7 @@
 import type {
   AgentState,
   AgentStatus,
-  RemoveOptions,
-  Workspace,
-  WorkspaceWithStatus,
 } from '../main/types';
-
-export interface JumpOutcome {
-  success: boolean;
-  reason?: string;
-}
-
-export interface WorkspaceApi {
-  list(): Promise<WorkspaceWithStatus[]>;
-  syncFromTmux(): Promise<void>;
-  jump(id: string): Promise<JumpOutcome>;
-  openInFinder(id: string): Promise<boolean>;
-  rename(id: string, name: string): Promise<Workspace | null>;
-  remove(id: string, opts?: RemoveOptions): Promise<boolean>;
-  onUpdated(callback: () => void): () => void;
-}
-
-declare global {
-  interface Window {
-    api: {
-      workspace: WorkspaceApi;
-    };
-  }
-}
 
 export interface Project {
   id: string;

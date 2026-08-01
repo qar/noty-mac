@@ -1,4 +1,4 @@
-const { app, Tray, Menu, ipcMain, nativeImage, BrowserWindow, Notification } = require('electron');
+const { app, Tray, Menu, ipcMain, nativeImage, Notification } = require('electron');
 const { execFile } = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
@@ -294,8 +294,8 @@ async function jumpToTmuxSession(sessionName) {
 
 let tray = null;
 let ntfyClient = null;
-let settingsWindow = null;
 let updater = null;
+let requestedDashboardView = 'workspace';
 
 // 防止应用退出
 app.on('window-all-closed', (e) => {
@@ -502,7 +502,7 @@ function buildTrayContextMenu() {
     {
       label: '设置',
       click: () => {
-        openSettingsWindow();
+        openSettingsView();
       }
     },
     {
@@ -544,28 +544,20 @@ function updateTrayIcon() {
   tray.setTitle(unreadCount > 0 ? ` ${unreadCount}` : '');
 }
 
-function openSettingsWindow() {
-  if (settingsWindow) {
-    settingsWindow.focus();
-    return;
-  }
-
-  settingsWindow = new BrowserWindow({
-    width: 500,
-    height: 600,
-    resizable: false,
-    webPreferences: {
-      preload: path.join(__dirname, '../preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false
+function openSettingsView() {
+  requestedDashboardView = 'settings';
+  const window = openMainWindow();
+  const navigate = () => {
+    if (!window.isDestroyed()) {
+      window.webContents.send('dashboard:navigate', 'settings');
     }
-  });
+  };
 
-  settingsWindow.loadFile(path.join(app.getAppPath(), 'src/renderer/settings.html'));
-
-  settingsWindow.on('closed', () => {
-    settingsWindow = null;
-  });
+  if (window.webContents.isLoadingMainFrame()) {
+    window.webContents.once('did-finish-load', navigate);
+  } else {
+    navigate();
+  }
 }
 
 function setupIPC() {
@@ -699,14 +691,18 @@ function setupIPC() {
     if (window) {
       window.hide();
     }
-    if (settingsWindow) {
-      settingsWindow.close();
+  });
+
+  ipcMain.handle('dashboard:get-initial-view', () => requestedDashboardView);
+  ipcMain.on('dashboard:set-view', (event, view) => {
+    if (view === 'workspace' || view === 'settings') {
+      requestedDashboardView = view;
     }
   });
 
-  // 打开设置
+  // 旧通知面板的设置入口现在导航到 dashboard。
   ipcMain.on('open-settings', () => {
-    openSettingsWindow();
+    openSettingsView();
   });
 
   // 获取应用版本
@@ -722,8 +718,9 @@ function setupIPC() {
   // 下载更新
   ipcMain.handle('download-update', async () => {
     return updater.downloadUpdate((progress) => {
-      if (settingsWindow) {
-        settingsWindow.webContents.send('update-download-progress', progress);
+      const window = getMainWindow();
+      if (window && !window.isDestroyed()) {
+        window.webContents.send('update-download-progress', progress);
       }
     });
   });

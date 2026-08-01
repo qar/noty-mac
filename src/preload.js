@@ -43,7 +43,19 @@ contextBridge.exposeInMainWorld('api', {
   downloadUpdate: () => ipcRenderer.invoke('download-update'),
   applyUpdate: () => ipcRenderer.invoke('apply-update'),
   onUpdateDownloadProgress: (callback) => {
-    ipcRenderer.on('update-download-progress', (event, progress) => callback(progress));
+    const listener = (event, progress) => callback(progress);
+    ipcRenderer.on('update-download-progress', listener);
+    return () => ipcRenderer.removeListener('update-download-progress', listener);
+  },
+
+  dashboard: {
+    getInitialView: () => ipcRenderer.invoke('dashboard:get-initial-view'),
+    setView: (view) => ipcRenderer.send('dashboard:set-view', view),
+    onNavigate: (callback) => {
+      const listener = (event, view) => callback(view);
+      ipcRenderer.on('dashboard:navigate', listener);
+      return () => ipcRenderer.removeListener('dashboard:navigate', listener);
+    }
   },
 
   // 工作区 (Workspace) —— Step 3d
