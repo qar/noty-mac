@@ -78,5 +78,27 @@ contextBridge.exposeInMainWorld('api', {
     detect: () => ipcRenderer.invoke('integration:detect'),
     copy: (text) => ipcRenderer.invoke('integration:copy', text),
     openClaudeDir: () => ipcRenderer.invoke('integration:open-claude-dir')
+  },
+
+  // 本地 AI 程序 (Settings > 本地 AI)
+  localAi: {
+    list: () => ipcRenderer.invoke('local-ai:list'),
+    create: (templateId) => ipcRenderer.invoke('local-ai:create', templateId),
+    duplicate: (id) => ipcRenderer.invoke('local-ai:duplicate', id),
+    save: (program) => ipcRenderer.invoke('local-ai:save', program),
+    remove: (id) => ipcRenderer.invoke('local-ai:remove', id),
+    detect: (id) => ipcRenderer.invoke('local-ai:detect', id),
+    run: (id, prompt, runId) => ipcRenderer.invoke('local-ai:run', id, prompt, runId),
+    cancel: (runId) => ipcRenderer.invoke('local-ai:cancel', runId),
+    onOutput: (callback) => {
+      const listener = (event, payload) => callback(payload);
+      ipcRenderer.on('local-ai:output', listener);
+      return () => ipcRenderer.removeListener('local-ai:output', listener);
+    },
+    onFinished: (callback) => {
+      const listener = (event, payload) => callback(payload);
+      ipcRenderer.on('local-ai:finished', listener);
+      return () => ipcRenderer.removeListener('local-ai:finished', listener);
+    }
   }
 });

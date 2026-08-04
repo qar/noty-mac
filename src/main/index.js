@@ -11,6 +11,7 @@ const workspace = require('./workspace');
 const { probeTmux } = require('./tmux-probe');
 const { registerWorkspaceIpc } = require('./ipc-workspace');
 const { registerIntegrationIpc } = require('./ipc-integration');
+const { registerLocalAiIpc } = require('./ipc-local-ai');
 const { setDockIcon } = require('./app-icon');
 
 function generateId() {
@@ -323,6 +324,7 @@ app.whenReady().then(async () => {
     syncTmuxToWorkspaces,
   });
   registerIntegrationIpc();
+  registerLocalAiIpc();
   updateTrayIcon();
 
   updater = new Updater();

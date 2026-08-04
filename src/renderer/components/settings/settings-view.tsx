@@ -2,6 +2,7 @@ import { AboutSettings } from './about-settings';
 import { ChannelSettings } from './channel-settings';
 import { GeneralSettings } from './general-settings';
 import { IntegrationSettings } from './integration-settings';
+import { LocalAiSettings } from './local-ai-settings';
 import { SETTINGS_TABS, type SettingsTab } from './settings-navigation';
 
 export function SettingsView({ activeTab }: { activeTab: SettingsTab }) {
@@ -23,6 +24,7 @@ export function SettingsView({ activeTab }: { activeTab: SettingsTab }) {
           {activeTab === 'general' ? <GeneralSettings /> : null}
           {activeTab === 'channels' ? <ChannelSettings /> : null}
           {activeTab === 'integration' ? <IntegrationSettings /> : null}
+          {activeTab === 'local-ai' ? <LocalAiSettings /> : null}
           {activeTab === 'about' ? <AboutSettings /> : null}
         </div>
       </div>

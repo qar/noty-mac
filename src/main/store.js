@@ -57,6 +57,61 @@ const schema = {
       hideRead: { type: 'boolean' }
     }
   },
+  localAiPrograms: {
+    type: 'array',
+    default: [],
+    maxItems: 32,
+    items: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        name: { type: 'string' },
+        executable: { type: 'string' },
+        args: { type: 'array', items: { type: 'string' } },
+        promptMode: { type: 'string', enum: ['argument', 'stdin', 'none'] },
+        workingDirectory: { type: 'string' },
+        environment: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              key: { type: 'string' },
+              value: { type: 'string' },
+              secret: { type: 'boolean' }
+            },
+            required: ['key', 'value', 'secret']
+          }
+        },
+        proxy: {
+          type: 'object',
+          properties: {
+            mode: { type: 'string', enum: ['inherit', 'none', 'custom'] },
+            httpProxy: { type: 'string' },
+            httpsProxy: { type: 'string' },
+            allProxy: { type: 'string' },
+            noProxy: { type: 'string' }
+          },
+          required: ['mode', 'httpProxy', 'httpsProxy', 'allProxy', 'noProxy']
+        },
+        timeoutMs: { type: 'number', minimum: 1000, maximum: 1800000 },
+        enabled: { type: 'boolean' },
+        versionArgs: { type: 'array', items: { type: 'string' } }
+      },
+      required: [
+        'id',
+        'name',
+        'executable',
+        'args',
+        'promptMode',
+        'workingDirectory',
+        'environment',
+        'proxy',
+        'timeoutMs',
+        'enabled',
+        'versionArgs'
+      ]
+    }
+  },
   workspaces: {
     type: 'array',
     default: [],

@@ -14,6 +14,7 @@
 import { BrowserWindow, app } from 'electron';
 import * as path from 'path';
 import { setDockIcon } from './app-icon';
+import { stopLocalAiRunsForOwner } from './ipc-local-ai';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -76,6 +77,10 @@ function createMainWindow(): BrowserWindow {
     if (!isAnyWindowVisible()) {
       app.dock?.hide();
     }
+  });
+
+  win.on('hide', () => {
+    stopLocalAiRunsForOwner(win.webContents.id);
   });
 
   return win;

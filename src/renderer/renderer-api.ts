@@ -3,6 +3,15 @@ import type {
   Workspace,
   WorkspaceWithStatus,
 } from '../main/types';
+import type {
+  LocalAiCreateResult,
+  LocalAiDetectionResult,
+  LocalAiFinishedEvent,
+  LocalAiOutputEvent,
+  LocalAiProgram,
+  LocalAiStartResult,
+  LocalAiTemplateId,
+} from '../main/local-ai-types';
 
 export type DashboardView = 'workspace' | 'settings';
 
@@ -82,6 +91,18 @@ export interface AppApi {
     detect(): Promise<IntegrationSnapshot>;
     copy(text: string): Promise<boolean>;
     openClaudeDir(): Promise<{ opened: boolean; reason?: string }>;
+  };
+  localAi: {
+    list(): Promise<LocalAiProgram[]>;
+    create(templateId: LocalAiTemplateId): Promise<LocalAiCreateResult>;
+    duplicate(id: string): Promise<LocalAiCreateResult>;
+    save(program: LocalAiProgram): Promise<LocalAiProgram[]>;
+    remove(id: string): Promise<LocalAiProgram[]>;
+    detect(id: string): Promise<LocalAiDetectionResult>;
+    run(id: string, prompt: string, runId: string): Promise<LocalAiStartResult>;
+    cancel(runId: string): Promise<boolean>;
+    onOutput(callback: (event: LocalAiOutputEvent) => void): () => void;
+    onFinished(callback: (event: LocalAiFinishedEvent) => void): () => void;
   };
 }
 
