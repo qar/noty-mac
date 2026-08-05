@@ -12,6 +12,7 @@ const { probeTmux } = require('./tmux-probe');
 const { registerWorkspaceIpc } = require('./ipc-workspace');
 const { registerIntegrationIpc } = require('./ipc-integration');
 const { registerLocalAiIpc } = require('./ipc-local-ai');
+const { registerSettingsIpc } = require('./ipc-settings');
 const { setDockIcon } = require('./app-icon');
 
 function generateId() {
@@ -325,6 +326,7 @@ app.whenReady().then(async () => {
   });
   registerIntegrationIpc();
   registerLocalAiIpc();
+  registerSettingsIpc();
   updateTrayIcon();
 
   updater = new Updater();
@@ -674,17 +676,6 @@ function setupIPC() {
     }
 
     return channels;
-  });
-
-  // 获取设置
-  ipcMain.handle('get-settings', () => {
-    return store.get('settings');
-  });
-
-  // 更新设置
-  ipcMain.handle('update-settings', (event, settings) => {
-    store.set('settings', settings);
-    return settings;
   });
 
   // 关闭窗口

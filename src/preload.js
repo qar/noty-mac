@@ -18,6 +18,10 @@ contextBridge.exposeInMainWorld('api', {
   // 设置相关
   getSettings: () => ipcRenderer.invoke('get-settings'),
   updateSettings: (settings) => ipcRenderer.invoke('update-settings', settings),
+  selectWorktreesDirectory: (currentValue) =>
+    ipcRenderer.invoke('select-worktrees-directory', currentValue),
+  saveWorktreesDirectory: (directory) =>
+    ipcRenderer.invoke('save-worktrees-directory', directory),
 
   // 窗口控制
   closeWindow: () => ipcRenderer.send('close-window'),

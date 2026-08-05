@@ -12,6 +12,9 @@ import type {
   LocalAiStartResult,
   LocalAiTemplateId,
 } from '../main/local-ai-types';
+import type { AppPreferences } from '../main/settings-types';
+
+export type { AppPreferences } from '../main/settings-types';
 
 export type DashboardView = 'workspace' | 'settings';
 
@@ -34,11 +37,6 @@ export interface Channel {
   id: string;
   name: string;
   url: string;
-}
-
-export interface AppPreferences {
-  soundEnabled: boolean;
-  hideRead: boolean;
 }
 
 export interface IntegrationSnapshot {
@@ -76,6 +74,8 @@ export interface AppApi {
   removeChannel(id: string): Promise<Channel[]>;
   getSettings(): Promise<AppPreferences>;
   updateSettings(settings: AppPreferences): Promise<AppPreferences>;
+  selectWorktreesDirectory(currentValue: string): Promise<string | null>;
+  saveWorktreesDirectory(directory: string): Promise<string>;
   getAppVersion(): Promise<string>;
   checkForUpdate(): Promise<UpdateCheckResult>;
   downloadUpdate(): Promise<UpdateActionResult>;

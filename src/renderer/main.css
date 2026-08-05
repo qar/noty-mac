@@ -1134,6 +1134,59 @@ svg.is-spinning {
   justify-content: flex-end;
 }
 
+.worktrees-directory-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: end;
+}
+
+.worktrees-directory-control {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: var(--space-2);
+}
+
+.worktrees-directory-control input {
+  min-width: 0;
+  height: 34px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  outline: none;
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+}
+
+.worktrees-directory-control input:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-subtle);
+}
+
+.worktrees-directory-control input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.settings-icon-button.worktrees-directory-picker {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-bg-elevated);
+}
+
+.settings-icon-button.worktrees-directory-picker:hover:not(:disabled) {
+  background: var(--color-bg-subtle);
+}
+
+.worktrees-directory-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .settings-instructions {
   border-top: 1px solid var(--color-divider);
 }

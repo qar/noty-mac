@@ -50,11 +50,13 @@ const schema = {
     type: 'object',
     default: {
       soundEnabled: true,
-      hideRead: true
+      hideRead: true,
+      worktreesDirectory: ''
     },
     properties: {
       soundEnabled: { type: 'boolean' },
-      hideRead: { type: 'boolean' }
+      hideRead: { type: 'boolean' },
+      worktreesDirectory: { type: 'string' }
     }
   },
   localAiPrograms: {
