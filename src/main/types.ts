@@ -4,12 +4,27 @@
 
 export type WorkspaceSource = 'tmux-sync' | 'manual';
 
+export interface Project {
+  /** Stable identifier; currently the normalized absolute directory path. */
+  id: string;
+  name: string;
+  directory: string;
+}
+
+export interface TmuxSessionSnapshot {
+  name: string;
+  /** Current directory of the active pane in the session's active window. */
+  workingDirectory: string | null;
+}
+
 export interface Workspace {
   id: string;
   name: string;
   /** Tmux session name this workspace is linked to. `null` after the session
    *  is manually detached or the user un-links it. */
   tmuxSessionName: string | null;
+  /** Last known active tmux pane directory. `null` until a path-aware sync. */
+  workingDirectory: string | null;
   /** Absolute path to `~/Library/Application Support/noty-mac/workspaces/<id>/`. */
   directory: string;
   source: WorkspaceSource;
@@ -38,10 +53,11 @@ export interface WorkspaceMetaFile {
   id: string;
   name: string;
   tmuxSessionName: string | null;
+  workingDirectory: string | null;
   source: WorkspaceSource;
   createdAt: number;
   updatedAt: number;
-  schemaVersion: 1;
+  schemaVersion: 2;
 }
 
 // ---------------------------------------------------------------------------
@@ -77,4 +93,6 @@ export interface WorkspaceWithStatus extends Workspace {
   /** null when no `agent-status.json` file exists or the file couldn't be
    *  read/parsed. */
   agentStatus: AgentStatus | null;
+  /** Absolute project directory derived from the configured projects root. */
+  projectId: string | null;
 }

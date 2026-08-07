@@ -5,7 +5,7 @@
 //   - Manage each workspace's on-disk directory under
 //     `~/Library/Application Support/noty-mac/workspaces/<uuid>/`.
 //   - Provide idempotent `syncFromTmux` that reconciles the persisted
-//     workspaces against a caller-supplied list of tmux session names.
+//     workspaces against caller-supplied tmux session snapshots.
 //
 // Red-line (docs/workspace-mvp.md §11): this module MUST NOT kill tmux
 // sessions, delete git worktrees, or touch user files outside its own
@@ -17,6 +17,8 @@ import { randomUUID } from 'crypto';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
+import { projectIdForWorkingDirectory } from './project-core';
+import { getCanonicalProjectsDirectory } from './projects';
 import type {
   Workspace,
   WorkspaceSyncResult,
@@ -25,6 +27,7 @@ import type {
   AgentStatus,
   AgentState,
   WorkspaceWithStatus,
+  TmuxSessionSnapshot,
 } from './types';
 
 // electron-store is CommonJS in the version pinned here; type it loosely to
@@ -46,8 +49,16 @@ function workspaceDirFor(id: string): string {
   return path.join(workspacesRoot(), id);
 }
 
+type StoredWorkspace = Omit<Workspace, 'workingDirectory'> & {
+  workingDirectory?: unknown;
+};
+
 function readAll(): Workspace[] {
-  return store.get<Workspace[]>(STORE_KEY) ?? [];
+  const stored = store.get<StoredWorkspace[]>(STORE_KEY) ?? [];
+  return stored.map((workspace) => ({
+    ...workspace,
+    workingDirectory: normalizeWorkingDirectory(workspace.workingDirectory),
+  }));
 }
 
 function writeAll(next: Workspace[]): void {
@@ -64,10 +75,11 @@ async function writeMetaFile(ws: Workspace): Promise<void> {
     id: ws.id,
     name: ws.name,
     tmuxSessionName: ws.tmuxSessionName,
+    workingDirectory: ws.workingDirectory,
     source: ws.source,
     createdAt: ws.createdAt,
     updatedAt: ws.updatedAt,
-    schemaVersion: 1,
+    schemaVersion: 2,
   };
   const file = path.join(ws.directory, 'workspace.json');
   await fs.writeFile(file, JSON.stringify(meta, null, 2) + '\n', 'utf-8');
@@ -96,16 +108,16 @@ export function getDirectory(id: string): string | null {
 
 /** Public: idempotent sync.
  *
- *  - Existing workspaces whose `tmuxSessionName` appears in `tmuxSessionNames`
+ *  - Existing workspaces whose `tmuxSessionName` appears in `tmuxSessions`
  *    are kept as-is (updatedAt is refreshed).
  *  - Session names with no existing workspace produce a new workspace with a
  *    fresh uuid directory and a `workspace.json` snapshot.
- *  - Workspaces whose `tmuxSessionName` is NOT in `tmuxSessionNames` are
+ *  - Workspaces whose `tmuxSessionName` is NOT in `tmuxSessions` are
  *    RETAINED (not removed) — the tmux session might merely be offline. The
  *    UI marks them as offline; see workspace-mvp.md §4.3 and §Q9.
  */
 export async function syncFromTmux(
-  tmuxSessionNames: string[]
+  tmuxSessions: TmuxSessionSnapshot[]
 ): Promise<WorkspaceSyncResult> {
   const now = Date.now();
   const existing = readAll();
@@ -120,10 +132,20 @@ export async function syncFromTmux(
   let added = 0;
   let skipped = 0;
 
-  for (const name of tmuxSessionNames) {
+  for (const session of tmuxSessions) {
+    const name = session.name;
+    const workingDirectory = normalizeWorkingDirectory(session.workingDirectory);
     const hit = byName.get(name);
     if (hit) {
       hit.updatedAt = now;
+      if (workingDirectory && hit.workingDirectory !== workingDirectory) {
+        hit.workingDirectory = workingDirectory;
+        try {
+          await writeMetaFile(hit);
+        } catch (err) {
+          console.warn('[workspace] failed to update meta file for', hit.id, err);
+        }
+      }
       skipped += 1;
       continue;
     }
@@ -132,6 +154,7 @@ export async function syncFromTmux(
       id,
       name,
       tmuxSessionName: name,
+      workingDirectory,
       directory: workspaceDirFor(id),
       source: 'tmux-sync',
       createdAt: now,
@@ -275,12 +298,29 @@ async function readAgentStatus(workspaceDir: string): Promise<AgentStatus | null
 /** Public: `list()` + each workspace's parsed `agent-status.json` (or null). */
 export async function listWithStatus(): Promise<WorkspaceWithStatus[]> {
   const all = list();
+  const projectsDirectory = await getCanonicalProjectsDirectory();
   return Promise.all(
     all.map(async (ws) => ({
       ...ws,
       agentStatus: await readAgentStatus(ws.directory),
+      projectId: projectIdForWorkingDirectory(
+        projectsDirectory,
+        ws.workingDirectory
+      ),
     }))
   );
+}
+
+function normalizeWorkingDirectory(value: unknown): string | null {
+  if (
+    typeof value !== 'string' ||
+    !value ||
+    value.includes('\0') ||
+    !path.isAbsolute(value)
+  ) {
+    return null;
+  }
+  return path.resolve(value);
 }
 
 // Test-only helpers (not exported to preload).

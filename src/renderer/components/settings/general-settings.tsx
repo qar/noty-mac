@@ -2,20 +2,30 @@ import { EyeOff, FolderOpen, LoaderCircle, Save, Volume2 } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import type { AppPreferences } from '../../renderer-api';
 
-type PreferenceKey = 'soundEnabled' | 'hideRead' | 'worktreesDirectory';
-type TogglePreferenceKey = Exclude<PreferenceKey, 'worktreesDirectory'>;
+type TogglePreferenceKey = 'soundEnabled' | 'hideRead';
+type DirectoryPreferenceKey = 'projectsDirectory' | 'worktreesDirectory';
+type PreferenceKey = TogglePreferenceKey | DirectoryPreferenceKey;
+type DirectoryFeedback = {
+  message: string;
+  tone: 'success' | 'error';
+};
 
 export function GeneralSettings() {
   const [preferences, setPreferences] = useState<AppPreferences | null>(null);
-  const [directoryDraft, setDirectoryDraft] = useState('');
+  const [directoryDrafts, setDirectoryDrafts] = useState<
+    Record<DirectoryPreferenceKey, string>
+  >({
+    projectsDirectory: '',
+    worktreesDirectory: '',
+  });
   const [saving, setSaving] = useState<PreferenceKey | null>(null);
-  const [selectingDirectory, setSelectingDirectory] = useState(false);
+  const [selectingDirectory, setSelectingDirectory] =
+    useState<DirectoryPreferenceKey | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [preferenceError, setPreferenceError] = useState<string | null>(null);
-  const [directoryFeedback, setDirectoryFeedback] = useState<{
-    message: string;
-    tone: 'success' | 'error';
-  } | null>(null);
+  const [directoryFeedback, setDirectoryFeedback] = useState<
+    Partial<Record<DirectoryPreferenceKey, DirectoryFeedback>>
+  >({});
 
   useEffect(() => {
     let active = true;
@@ -24,7 +34,10 @@ export function GeneralSettings() {
       .then((next) => {
         if (active) {
           setPreferences(next);
-          setDirectoryDraft(next.worktreesDirectory);
+          setDirectoryDrafts({
+            projectsDirectory: next.projectsDirectory,
+            worktreesDirectory: next.worktreesDirectory,
+          });
         }
       })
       .catch((loadError) => {
@@ -37,7 +50,7 @@ export function GeneralSettings() {
   }, []);
 
   const togglePreference = async (key: TogglePreferenceKey): Promise<void> => {
-    if (!preferences || saving) return;
+    if (!preferences || saving || selectingDirectory) return;
     const previous = preferences;
     const next = { ...preferences, [key]: !preferences[key] };
     setPreferences(next);
@@ -47,7 +60,7 @@ export function GeneralSettings() {
       const saved = await window.api.updateSettings(next);
       setPreferences(saved);
     } catch (saveError) {
-      console.error('[settings] saveWorktreesDirectory failed:', saveError);
+      console.error('[settings] updateSettings failed:', saveError);
       setPreferences(previous);
       setPreferenceError('保存失败，请重试');
     } finally {
@@ -55,37 +68,66 @@ export function GeneralSettings() {
     }
   };
 
-  const selectDirectory = async (): Promise<void> => {
+  const updateDirectoryDraft = (
+    key: DirectoryPreferenceKey,
+    value: string
+  ): void => {
+    setDirectoryDrafts((current) => ({ ...current, [key]: value }));
+    setDirectoryFeedback((current) => ({ ...current, [key]: undefined }));
+  };
+
+  const selectDirectory = async (key: DirectoryPreferenceKey): Promise<void> => {
     if (!preferences || saving || selectingDirectory) return;
-    setSelectingDirectory(true);
-    setDirectoryFeedback(null);
+    setSelectingDirectory(key);
+    setDirectoryFeedback((current) => ({ ...current, [key]: undefined }));
     try {
-      const selected = await window.api.selectWorktreesDirectory(directoryDraft);
-      if (selected) setDirectoryDraft(selected);
+      const selected = key === 'projectsDirectory'
+        ? await window.api.selectProjectsDirectory(directoryDrafts[key])
+        : await window.api.selectWorktreesDirectory(directoryDrafts[key]);
+      if (selected) updateDirectoryDraft(key, selected);
     } catch (selectError) {
-      console.error('[settings] selectWorktreesDirectory failed:', selectError);
-      setDirectoryFeedback({ message: '无法打开目录选择器', tone: 'error' });
+      console.error(`[settings] select ${key} failed:`, selectError);
+      setDirectoryFeedback((current) => ({
+        ...current,
+        [key]: { message: '无法打开目录选择器', tone: 'error' },
+      }));
     } finally {
-      setSelectingDirectory(false);
+      setSelectingDirectory(null);
     }
   };
 
-  const saveDirectory = async (event: FormEvent): Promise<void> => {
+  const saveDirectory = async (
+    event: FormEvent,
+    key: DirectoryPreferenceKey
+  ): Promise<void> => {
     event.preventDefault();
     if (!preferences || saving || selectingDirectory) return;
-    setSaving('worktreesDirectory');
-    setDirectoryFeedback(null);
+    setSaving(key);
+    setDirectoryFeedback((current) => ({ ...current, [key]: undefined }));
     try {
-      const savedDirectory = await window.api.saveWorktreesDirectory(directoryDraft);
-      setPreferences({ ...preferences, worktreesDirectory: savedDirectory });
-      setDirectoryDraft(savedDirectory);
-      setDirectoryFeedback({ message: '目录已保存', tone: 'success' });
+      const savedDirectory = key === 'projectsDirectory'
+        ? await window.api.saveProjectsDirectory(directoryDrafts[key])
+        : await window.api.saveWorktreesDirectory(directoryDrafts[key]);
+      setPreferences((current) =>
+        current ? { ...current, [key]: savedDirectory } : current
+      );
+      setDirectoryDrafts((current) => ({
+        ...current,
+        [key]: savedDirectory,
+      }));
+      setDirectoryFeedback((current) => ({
+        ...current,
+        [key]: { message: '目录已保存', tone: 'success' },
+      }));
     } catch (saveError) {
-      console.error('[settings] updateSettings failed:', saveError);
-      setDirectoryFeedback({
-        message: errorMessage(saveError, '保存失败，请检查目录'),
-        tone: 'error',
-      });
+      console.error(`[settings] save ${key} failed:`, saveError);
+      setDirectoryFeedback((current) => ({
+        ...current,
+        [key]: {
+          message: errorMessage(saveError, '保存失败，请检查目录'),
+          tone: 'error',
+        },
+      }));
     } finally {
       setSaving(null);
     }
@@ -108,14 +150,14 @@ export function GeneralSettings() {
               icon={Volume2}
               label="声音提示"
               checked={preferences.soundEnabled}
-              disabled={Boolean(saving)}
+              disabled={Boolean(saving) || Boolean(selectingDirectory)}
               onToggle={() => void togglePreference('soundEnabled')}
             />
             <PreferenceRow
               icon={EyeOff}
               label="隐藏已读通知"
               checked={preferences.hideRead}
-              disabled={Boolean(saving)}
+              disabled={Boolean(saving) || Boolean(selectingDirectory)}
               onToggle={() => void togglePreference('hideRead')}
             />
           </div>
@@ -126,82 +168,135 @@ export function GeneralSettings() {
         ) : null}
       </section>
 
-      <section className="settings-section" aria-labelledby="worktreesTitle">
+      <section className="settings-section" aria-labelledby="repositoriesTitle">
         <div className="settings-section-heading">
-          <h2 id="worktreesTitle">代码仓库</h2>
+          <h2 id="repositoriesTitle">代码仓库</h2>
         </div>
 
         {preferences ? (
-          <form
-            className="worktrees-directory-form"
-            onSubmit={(event) => void saveDirectory(event)}
-          >
-            <div className="settings-form-field">
-              <label htmlFor="worktreesDirectory">Worktrees 目录</label>
-              <div className="worktrees-directory-control">
-                <input
-                  id="worktreesDirectory"
-                  type="text"
-                  value={directoryDraft}
-                  disabled={Boolean(saving)}
-                  spellCheck={false}
-                  autoComplete="off"
-                  aria-describedby={directoryFeedback ? 'worktreesDirectoryFeedback' : undefined}
-                  onChange={(event) => {
-                    setDirectoryDraft(event.target.value);
-                    setDirectoryFeedback(null);
-                  }}
-                />
-                <button
-                  type="button"
-                  className="settings-icon-button worktrees-directory-picker"
-                  title="选择目录"
-                  aria-label="选择 Worktrees 目录"
-                  disabled={Boolean(saving) || selectingDirectory}
-                  onClick={() => void selectDirectory()}
-                >
-                  {selectingDirectory ? (
-                    <LoaderCircle className="is-spinning" aria-hidden="true" />
-                  ) : (
-                    <FolderOpen aria-hidden="true" />
-                  )}
-                </button>
-              </div>
-            </div>
-            <div className="worktrees-directory-actions">
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={
-                  Boolean(saving) ||
-                  selectingDirectory ||
-                  directoryDraft.trim().length === 0 ||
-                  directoryDraft === preferences.worktreesDirectory
-                }
-              >
-                {saving === 'worktreesDirectory' ? (
-                  <LoaderCircle className="is-spinning" aria-hidden="true" />
-                ) : (
-                  <Save aria-hidden="true" />
-                )}
-                保存
-              </button>
-            </div>
-          </form>
-        ) : null}
-
-        {directoryFeedback ? (
-          <p
-            className={`settings-feedback is-${directoryFeedback.tone}`}
-            id="worktreesDirectoryFeedback"
-            role={directoryFeedback.tone === 'error' ? 'alert' : 'status'}
-          >
-            {directoryFeedback.message}
-          </p>
+          <div className="settings-directory-list">
+            <DirectorySetting
+              id="projectsDirectory"
+              label="项目目录"
+              value={directoryDrafts.projectsDirectory}
+              savedValue={preferences.projectsDirectory}
+              feedback={directoryFeedback.projectsDirectory}
+              disabled={Boolean(saving) || Boolean(selectingDirectory)}
+              selecting={selectingDirectory === 'projectsDirectory'}
+              saving={saving === 'projectsDirectory'}
+              onChange={(value) => updateDirectoryDraft('projectsDirectory', value)}
+              onSelect={() => void selectDirectory('projectsDirectory')}
+              onSubmit={(event) => void saveDirectory(event, 'projectsDirectory')}
+            />
+            <DirectorySetting
+              id="worktreesDirectory"
+              label="Worktrees 目录"
+              value={directoryDrafts.worktreesDirectory}
+              savedValue={preferences.worktreesDirectory}
+              feedback={directoryFeedback.worktreesDirectory}
+              disabled={Boolean(saving) || Boolean(selectingDirectory)}
+              selecting={selectingDirectory === 'worktreesDirectory'}
+              saving={saving === 'worktreesDirectory'}
+              onChange={(value) => updateDirectoryDraft('worktreesDirectory', value)}
+              onSelect={() => void selectDirectory('worktreesDirectory')}
+              onSubmit={(event) => void saveDirectory(event, 'worktreesDirectory')}
+            />
+          </div>
         ) : null}
       </section>
 
       {loadError ? <p className="settings-feedback is-error">{loadError}</p> : null}
+    </div>
+  );
+}
+
+function DirectorySetting({
+  id,
+  label,
+  value,
+  savedValue,
+  feedback,
+  disabled,
+  selecting,
+  saving,
+  onChange,
+  onSelect,
+  onSubmit,
+}: {
+  id: DirectoryPreferenceKey;
+  label: string;
+  value: string;
+  savedValue: string;
+  feedback?: DirectoryFeedback;
+  disabled: boolean;
+  selecting: boolean;
+  saving: boolean;
+  onChange(value: string): void;
+  onSelect(): void;
+  onSubmit(event: FormEvent): void;
+}) {
+  const feedbackId = `${id}Feedback`;
+  return (
+    <div className="settings-directory-setting">
+      <form className="settings-directory-form" onSubmit={onSubmit}>
+        <div className="settings-form-field">
+          <label htmlFor={id}>{label}</label>
+          <div className="settings-directory-control">
+            <input
+              id={id}
+              type="text"
+              value={value}
+              disabled={disabled}
+              spellCheck={false}
+              autoComplete="off"
+              aria-describedby={feedback ? feedbackId : undefined}
+              onChange={(event) => onChange(event.target.value)}
+            />
+            <button
+              type="button"
+              className="settings-icon-button settings-directory-picker"
+              title="选择目录"
+              aria-label={`选择${label}`}
+              disabled={disabled || selecting}
+              onClick={onSelect}
+            >
+              {selecting ? (
+                <LoaderCircle className="is-spinning" aria-hidden="true" />
+              ) : (
+                <FolderOpen aria-hidden="true" />
+              )}
+            </button>
+          </div>
+        </div>
+        <div className="settings-directory-actions">
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={
+              disabled ||
+              selecting ||
+              value.trim().length === 0 ||
+              value === savedValue
+            }
+          >
+            {saving ? (
+              <LoaderCircle className="is-spinning" aria-hidden="true" />
+            ) : (
+              <Save aria-hidden="true" />
+            )}
+            保存
+          </button>
+        </div>
+      </form>
+      {feedback ? (
+        <p
+          className={`settings-feedback is-${feedback.tone}`}
+          id={feedbackId}
+          role={feedback.tone === 'error' ? 'alert' : 'status'}
+        >
+          {feedback.message}
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -51,11 +51,13 @@ const schema = {
     default: {
       soundEnabled: true,
       hideRead: true,
+      projectsDirectory: '',
       worktreesDirectory: ''
     },
     properties: {
       soundEnabled: { type: 'boolean' },
       hideRead: { type: 'boolean' },
+      projectsDirectory: { type: 'string' },
       worktreesDirectory: { type: 'string' }
     }
   },
@@ -123,6 +125,7 @@ const schema = {
         id: { type: 'string' },
         name: { type: 'string' },
         tmuxSessionName: { type: ['string', 'null'] },
+        workingDirectory: { type: ['string', 'null'] },
         directory: { type: 'string' },
         source: { type: 'string' },
         createdAt: { type: 'number' },

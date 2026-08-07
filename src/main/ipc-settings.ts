@@ -8,8 +8,11 @@ import {
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import {
+  defaultProjectsDirectory,
   defaultWorktreesDirectory,
+  ensureProjectsDirectory,
   ensureWorktreesDirectory,
+  normalizeProjectsDirectory,
   normalizeWorktreesDirectory,
   preferencesFromStored,
   preferencesFromUpdate,
@@ -33,10 +36,27 @@ export function registerSettingsIpc(): void {
         ...(isRecord(stored) ? stored : {}),
         soundEnabled: preferences.soundEnabled,
         hideRead: preferences.hideRead,
+        projectsDirectory: current.projectsDirectory,
         worktreesDirectory: current.worktreesDirectory,
       };
       store.set('settings', next);
       return preferencesFromStored(next, homeDirectory);
+    }
+  );
+
+  ipcMain.handle(
+    'save-projects-directory',
+    async (event, value: unknown): Promise<string> => {
+      const directory = normalizeProjectsDirectory(value, app.getPath('home'));
+      const canonicalDirectory = await ensureProjectsDirectory(directory);
+
+      const stored = store.get('settings');
+      store.set('settings', {
+        ...(isRecord(stored) ? stored : {}),
+        projectsDirectory: canonicalDirectory,
+      });
+      event.sender.send('projects:updated');
+      return canonicalDirectory;
     }
   );
 
@@ -56,10 +76,36 @@ export function registerSettingsIpc(): void {
   );
 
   ipcMain.handle(
+    'select-projects-directory',
+    async (event, currentValue: unknown): Promise<string | null> => {
+      const homeDirectory = app.getPath('home');
+      const currentDirectory = await pickerDirectory(
+        currentValue,
+        homeDirectory,
+        'projects'
+      );
+      const owner = BrowserWindow.fromWebContents(event.sender);
+      const options: OpenDialogOptions = {
+        title: '选择项目目录',
+        defaultPath: currentDirectory,
+        properties: ['openDirectory', 'createDirectory'],
+      };
+      const result = owner
+        ? await dialog.showOpenDialog(owner, options)
+        : await dialog.showOpenDialog(options);
+      return result.canceled ? null : result.filePaths[0] ?? null;
+    }
+  );
+
+  ipcMain.handle(
     'select-worktrees-directory',
     async (event, currentValue: unknown): Promise<string | null> => {
       const homeDirectory = app.getPath('home');
-      const currentDirectory = await pickerDirectory(currentValue, homeDirectory);
+      const currentDirectory = await pickerDirectory(
+        currentValue,
+        homeDirectory,
+        'worktrees'
+      );
       const owner = BrowserWindow.fromWebContents(event.sender);
       const options: OpenDialogOptions = {
         title: '选择 Worktrees 目录',
@@ -92,10 +138,18 @@ async function nearestExistingDirectory(directory: string): Promise<string> {
   }
 }
 
-function pickerDirectory(value: unknown, homeDirectory: string): Promise<string> {
-  let directory = defaultWorktreesDirectory(homeDirectory);
+function pickerDirectory(
+  value: unknown,
+  homeDirectory: string,
+  kind: 'projects' | 'worktrees'
+): Promise<string> {
+  let directory = kind === 'projects'
+    ? defaultProjectsDirectory(homeDirectory)
+    : defaultWorktreesDirectory(homeDirectory);
   try {
-    directory = normalizeWorktreesDirectory(value, homeDirectory);
+    directory = kind === 'projects'
+      ? normalizeProjectsDirectory(value, homeDirectory)
+      : normalizeWorktreesDirectory(value, homeDirectory);
   } catch {
     // Invalid drafts should not prevent the native picker from opening.
   }

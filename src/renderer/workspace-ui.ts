@@ -3,62 +3,6 @@ import type {
   AgentStatus,
 } from '../main/types';
 
-export interface Project {
-  id: string;
-  name: string;
-  directory: string;
-}
-
-// Renderer-only placeholders. Real project persistence can replace this list
-// without migrating the existing workspace store.
-export const MOCK_PROJECTS: readonly Project[] = [
-  {
-    id: 'noty-mac',
-    name: 'Noty Mac',
-    directory: '/Users/qiaoanran/projects/noty-mac',
-  },
-  {
-    id: 'water-control',
-    name: 'Water Control',
-    directory: '/Users/qiaoanran/projects/water-control',
-  },
-  {
-    id: 'sensor-hub',
-    name: 'Sensor Hub',
-    directory: '/Users/qiaoanran/projects/sensor-hub',
-  },
-  {
-    id: 'mobile-lab',
-    name: 'Mobile Lab',
-    directory: '/Users/qiaoanran/projects/mobile-lab',
-  },
-  {
-    id: 'release-tools',
-    name: 'Release Tools',
-    directory: '/Users/qiaoanran/projects/release-tools',
-  },
-  {
-    id: 'agent-workbench',
-    name: 'Agent Workbench',
-    directory: '/Users/qiaoanran/projects/agent-workbench',
-  },
-  {
-    id: 'weather-station',
-    name: 'Weather Station',
-    directory: '/Users/qiaoanran/projects/weather-station',
-  },
-  {
-    id: 'infrastructure',
-    name: 'Infrastructure',
-    directory: '/Users/qiaoanran/projects/infrastructure',
-  },
-  {
-    id: 'playground',
-    name: 'Playground',
-    directory: '/Users/qiaoanran/projects/playground',
-  },
-];
-
 export const POLL_INTERVAL_MS = 3_000;
 const STALE_THRESHOLD_MS = 5 * 60_000;
 

@@ -11,6 +11,7 @@ interface WorkspacePanelProps {
   workspaces: WorkspaceWithStatus[];
   selectedId: string | null;
   syncing: boolean;
+  emptyMessage?: string;
   onSelect(id: string): void;
   onJump(workspace: WorkspaceWithStatus): void;
   onSync(): void;
@@ -24,6 +25,7 @@ export function WorkspacePanel({
   workspaces,
   selectedId,
   syncing,
+  emptyMessage,
   onSelect,
   onJump,
   onSync,
@@ -56,6 +58,11 @@ export function WorkspacePanel({
             onContextMenu={onContextMenu}
           />
         ))}
+        {workspaces.length === 0 && emptyMessage ? (
+          <li className="workspace-list-empty" role="none">
+            <span role="status">{emptyMessage}</span>
+          </li>
+        ) : null}
       </ul>
     </aside>
   );

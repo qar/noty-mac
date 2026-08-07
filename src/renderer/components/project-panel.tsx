@@ -1,9 +1,12 @@
-import { Folder, Settings } from 'lucide-react';
-import type { Project } from '../workspace-ui';
+import { Folder, LayoutGrid, Settings } from 'lucide-react';
+import type { Project } from '../../main/types';
+
+export const ALL_PROJECTS_ID = '__all_projects__';
 
 interface ProjectPanelProps {
   projects: readonly Project[];
   selectedId: string;
+  loadState: 'loading' | 'ready' | 'error';
   onSelect(id: string): void;
   onSettings(): void;
 }
@@ -11,6 +14,7 @@ interface ProjectPanelProps {
 export function ProjectPanel({
   projects,
   selectedId,
+  loadState,
   onSelect,
   onSettings,
 }: ProjectPanelProps) {
@@ -22,29 +26,41 @@ export function ProjectPanel({
         </div>
       </header>
       <ul className="project-list" role="listbox" aria-label="项目">
+        <ProjectListItem
+          id={ALL_PROJECTS_ID}
+          name="全部项目"
+          subtitle="所有工作区"
+          selectedId={selectedId}
+          icon={LayoutGrid}
+          onSelect={onSelect}
+        />
         {projects.map((project) => {
-          const isActive = project.id === selectedId;
           return (
-            <li key={project.id} role="none">
-              <button
-                type="button"
-                className={`project-list-item${isActive ? ' is-active' : ''}`}
-                role="option"
-                aria-selected={isActive}
-                aria-label={`项目 ${project.name}，目录 ${project.directory}`}
-                onClick={() => onSelect(project.id)}
-              >
-                <Folder className="project-list-item-icon" aria-hidden="true" />
-                <span className="project-list-item-copy">
-                  <span className="project-list-item-title">{project.name}</span>
-                  <code className="project-list-item-path" title={project.directory}>
-                    {project.directory}
-                  </code>
-                </span>
-              </button>
-            </li>
+            <ProjectListItem
+              key={project.id}
+              id={project.id}
+              name={project.name}
+              subtitle={project.directory}
+              selectedId={selectedId}
+              icon={Folder}
+              onSelect={onSelect}
+            />
           );
         })}
+        {loadState !== 'ready' || projects.length === 0 ? (
+          <li
+            className={`project-list-status${loadState === 'error' ? ' is-error' : ''}`}
+            role="none"
+          >
+            <span role={loadState === 'error' ? 'alert' : 'status'}>
+              {loadState === 'loading'
+                ? '正在载入项目'
+                : loadState === 'error'
+                  ? '项目目录不可用'
+                  : '暂无项目'}
+            </span>
+          </li>
+        ) : null}
       </ul>
       <footer className="project-panel-footer">
         <button
@@ -57,5 +73,43 @@ export function ProjectPanel({
         </button>
       </footer>
     </aside>
+  );
+}
+
+function ProjectListItem({
+  id,
+  name,
+  subtitle,
+  selectedId,
+  icon: Icon,
+  onSelect,
+}: {
+  id: string;
+  name: string;
+  subtitle: string;
+  selectedId: string;
+  icon: typeof Folder;
+  onSelect(id: string): void;
+}) {
+  const isActive = id === selectedId;
+  return (
+    <li role="none">
+      <button
+        type="button"
+        className={`project-list-item${isActive ? ' is-active' : ''}`}
+        role="option"
+        aria-selected={isActive}
+        aria-label={`项目 ${name}，${subtitle}`}
+        onClick={() => onSelect(id)}
+      >
+        <Icon className="project-list-item-icon" aria-hidden="true" />
+        <span className="project-list-item-copy">
+          <span className="project-list-item-title">{name}</span>
+          <code className="project-list-item-path" title={subtitle}>
+            {subtitle}
+          </code>
+        </span>
+      </button>
+    </li>
   );
 }

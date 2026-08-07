@@ -13,7 +13,12 @@ const { registerWorkspaceIpc } = require('./ipc-workspace');
 const { registerIntegrationIpc } = require('./ipc-integration');
 const { registerLocalAiIpc } = require('./ipc-local-ai');
 const { registerSettingsIpc } = require('./ipc-settings');
+const { registerProjectsIpc } = require('./ipc-projects');
 const { setDockIcon } = require('./app-icon');
+const {
+  TMUX_SESSION_SNAPSHOT_FORMAT,
+  parseTmuxSessionSnapshots
+} = require('./tmux-workspace');
 
 function generateId() {
   return crypto.randomBytes(16).toString('hex');
@@ -327,6 +332,7 @@ app.whenReady().then(async () => {
   registerIntegrationIpc();
   registerLocalAiIpc();
   registerSettingsIpc();
+  registerProjectsIpc();
   updateTrayIcon();
 
   updater = new Updater();
@@ -414,20 +420,21 @@ function refreshTmuxProbeThrottled(minIntervalMs = 5000) {
 // -----------------------------------------------------------------------
 // Workspace: tmux → workspace sync
 //
-// Reads local tmux session names via `tmux list-sessions -F '#S'`, hands
-// them to the workspace data layer for idempotent reconciliation, then
+// Reads local tmux session names and each active pane directory, hands the
+// snapshots to the workspace data layer for idempotent reconciliation, then
 // posts a system notification summarising the delta (Q6 decision).
 // Red-line §11: this only runs a READ-ONLY tmux command; workspace.js
 // side-effects are limited to its own uuid directories.
 // -----------------------------------------------------------------------
 async function syncTmuxToWorkspaces() {
-  let sessionNames = [];
+  let sessions = [];
   try {
-    const stdout = await execTmux(['list-sessions', '-F', '#S']);
-    sessionNames = stdout
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean);
+    const stdout = await execTmux([
+      'list-sessions',
+      '-F',
+      TMUX_SESSION_SNAPSHOT_FORMAT
+    ]);
+    sessions = parseTmuxSessionSnapshots(stdout);
   } catch (error) {
     if (error && error.message === 'tmux_not_found') {
       new Notification({
@@ -439,7 +446,7 @@ async function syncTmuxToWorkspaces() {
     // `no server running on <socket>` is what tmux prints when nothing is
     // attached — treat it as "zero sessions" rather than an error.
     if (/no server running/i.test(error?.message || '')) {
-      sessionNames = [];
+      sessions = [];
     } else {
       console.error('[workspace] tmux list-sessions failed:', error);
       new Notification({
@@ -452,7 +459,7 @@ async function syncTmuxToWorkspaces() {
 
   let result;
   try {
-    result = await workspace.syncFromTmux(sessionNames);
+    result = await workspace.syncFromTmux(sessions);
   } catch (error) {
     console.error('[workspace] syncFromTmux failed:', error);
     new Notification({
@@ -464,7 +471,7 @@ async function syncTmuxToWorkspaces() {
 
   new Notification({
     title: 'Noty · 同步完成',
-    body: `新增 ${result.added}，跳过 ${result.skipped}（共 ${sessionNames.length} 个 tmux session）`
+    body: `新增 ${result.added}，跳过 ${result.skipped}（共 ${sessions.length} 个 tmux session）`
   }).show();
 
   // Nudge the main window renderer to re-fetch (Step 4b will subscribe).

@@ -1,4 +1,5 @@
 import type {
+  Project,
   RemoveOptions,
   Workspace,
   WorkspaceWithStatus,
@@ -30,6 +31,11 @@ export interface WorkspaceApi {
   openInFinder(id: string): Promise<boolean>;
   rename(id: string, name: string): Promise<Workspace | null>;
   remove(id: string, opts?: RemoveOptions): Promise<boolean>;
+  onUpdated(callback: () => void): () => void;
+}
+
+export interface ProjectsApi {
+  list(): Promise<Project[]>;
   onUpdated(callback: () => void): () => void;
 }
 
@@ -69,11 +75,14 @@ export interface UpdateActionResult {
 
 export interface AppApi {
   workspace: WorkspaceApi;
+  projects: ProjectsApi;
   getChannels(): Promise<Channel[]>;
   addChannel(name: string, url: string): Promise<Channel[]>;
   removeChannel(id: string): Promise<Channel[]>;
   getSettings(): Promise<AppPreferences>;
   updateSettings(settings: AppPreferences): Promise<AppPreferences>;
+  selectProjectsDirectory(currentValue: string): Promise<string | null>;
+  saveProjectsDirectory(directory: string): Promise<string>;
   selectWorktreesDirectory(currentValue: string): Promise<string | null>;
   saveWorktreesDirectory(directory: string): Promise<string>;
   getAppVersion(): Promise<string>;

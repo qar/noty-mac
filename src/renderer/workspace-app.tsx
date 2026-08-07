@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { WorkspaceWithStatus } from '../main/types';
-import { ProjectPanel } from './components/project-panel';
+import type { Project, WorkspaceWithStatus } from '../main/types';
+import {
+  ALL_PROJECTS_ID,
+  ProjectPanel,
+} from './components/project-panel';
 import { SettingsSidebar } from './components/settings/settings-sidebar';
 import { SettingsView } from './components/settings/settings-view';
 import type { SettingsTab } from './components/settings/settings-navigation';
@@ -15,26 +18,28 @@ import {
   WorkspaceContextMenu,
   type ContextMenuState,
 } from './components/workspace-overlays';
-import {
-  MOCK_PROJECTS,
-  POLL_INTERVAL_MS,
-} from './workspace-ui';
+import { POLL_INTERVAL_MS } from './workspace-ui';
 import type { DashboardView } from './renderer-api';
 
 type LoadState = 'loading' | 'ready' | 'error';
 
 const workspaceApi = window.api?.workspace;
+const projectsApi = window.api?.projects;
 
 export function WorkspaceApp() {
   const [workspaces, setWorkspaces] = useState<WorkspaceWithStatus[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(
     null
   );
-  const [selectedProjectId, setSelectedProjectId] = useState(MOCK_PROJECTS[0].id);
+  const [selectedProjectId, setSelectedProjectId] = useState(ALL_PROJECTS_ID);
   const [activeView, setActiveView] = useState<DashboardView>('workspace');
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
   const [loadState, setLoadState] = useState<LoadState>(
     workspaceApi ? 'loading' : 'error'
+  );
+  const [projectLoadState, setProjectLoadState] = useState<LoadState>(
+    projectsApi ? 'loading' : 'error'
   );
   const [syncing, setSyncing] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -60,16 +65,32 @@ export function WorkspaceApp() {
       const next = await workspaceApi.list();
       // Keep relative timestamps and stale agent states moving with the poll.
       setWorkspaces(next);
-      setSelectedWorkspaceId((current) => {
-        if (current && next.some((workspace) => workspace.id === current)) {
-          return current;
-        }
-        return next[0]?.id ?? null;
-      });
       setLoadState('ready');
     } catch (error) {
       console.error('[main] workspace.list failed:', error);
       setLoadState('error');
+    }
+  }, []);
+
+  const refreshProjects = useCallback(async (): Promise<void> => {
+    if (!projectsApi) {
+      setProjectLoadState('error');
+      return;
+    }
+    try {
+      const next = await projectsApi.list();
+      setProjects(next);
+      setSelectedProjectId((current) =>
+        current === ALL_PROJECTS_ID || next.some((project) => project.id === current)
+          ? current
+          : ALL_PROJECTS_ID
+      );
+      setProjectLoadState('ready');
+    } catch (error) {
+      console.error('[main] projects.list failed:', error);
+      setProjects([]);
+      setSelectedProjectId(ALL_PROJECTS_ID);
+      setProjectLoadState('error');
     }
   }, []);
 
@@ -87,6 +108,16 @@ export function WorkspaceApp() {
       unsubscribe?.();
     };
   }, [refresh]);
+
+  useEffect(() => {
+    if (!projectsApi) return;
+    void refreshProjects();
+    const unsubscribe = projectsApi.onUpdated(() => {
+      void refreshProjects();
+      void refresh();
+    });
+    return () => unsubscribe?.();
+  }, [refresh, refreshProjects]);
 
   useEffect(() => {
     const dashboardApi = window.api?.dashboard;
@@ -113,12 +144,39 @@ export function WorkspaceApp() {
     };
   }, []);
 
+  const filteredWorkspaces = useMemo(
+    () =>
+      selectedProjectId === ALL_PROJECTS_ID
+        ? workspaces
+        : workspaces.filter(
+            (workspace) => workspace.projectId === selectedProjectId
+          ),
+    [selectedProjectId, workspaces]
+  );
+
+  useEffect(() => {
+    if (loadState !== 'ready') return;
+    setSelectedWorkspaceId((current) =>
+      current && filteredWorkspaces.some((workspace) => workspace.id === current)
+        ? current
+        : filteredWorkspaces[0]?.id ?? null
+    );
+  }, [filteredWorkspaces, loadState]);
+
   const selectedWorkspace = useMemo(
     () =>
-      workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ??
-      null,
-    [selectedWorkspaceId, workspaces]
+      filteredWorkspaces.find(
+        (workspace) => workspace.id === selectedWorkspaceId
+      ) ?? null,
+    [filteredWorkspaces, selectedWorkspaceId]
   );
+
+  const selectProject = useCallback((id: string): void => {
+    setSelectedProjectId(id);
+    setContextMenu(null);
+    setRenaming(null);
+    setDeleting(null);
+  }, []);
 
   const syncWorkspaces = useCallback(async (): Promise<void> => {
     if (!workspaceApi || syncing) return;
@@ -208,6 +266,8 @@ export function WorkspaceApp() {
   );
 
   const hasWorkspaces = loadState === 'ready' && workspaces.length > 0;
+  const projectHasNoWorkspaces =
+    selectedProjectId !== ALL_PROJECTS_ID && filteredWorkspaces.length === 0;
   const emptyState =
     loadState === 'loading'
       ? 'loading'
@@ -232,9 +292,10 @@ export function WorkspaceApp() {
           />
         ) : (
           <ProjectPanel
-            projects={MOCK_PROJECTS}
+            projects={projects}
             selectedId={selectedProjectId}
-            onSelect={setSelectedProjectId}
+            loadState={projectLoadState}
+            onSelect={selectProject}
             onSettings={() => showDashboardView('settings')}
           />
         )}
@@ -243,9 +304,12 @@ export function WorkspaceApp() {
         ) : hasWorkspaces ? (
           <>
             <WorkspacePanel
-              workspaces={workspaces}
+              workspaces={filteredWorkspaces}
               selectedId={selectedWorkspaceId}
               syncing={syncing}
+              emptyMessage={
+                projectHasNoWorkspaces ? '该项目暂无工作区' : undefined
+              }
               onSelect={setSelectedWorkspaceId}
               onJump={(workspace) => void jumpToWorkspace(workspace)}
               onSync={() => void syncWorkspaces()}
@@ -255,6 +319,9 @@ export function WorkspaceApp() {
             />
             <WorkspaceDetail
               workspace={selectedWorkspace}
+              emptyMessage={
+                projectHasNoWorkspaces ? '该项目暂无工作区。' : undefined
+              }
               onJump={(workspace) => void jumpToWorkspace(workspace)}
               onOpenFinder={(workspace) => void openInFinder(workspace)}
               onRename={setRenaming}

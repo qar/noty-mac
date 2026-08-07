@@ -16,6 +16,7 @@ import {
 
 interface WorkspaceDetailProps {
   workspace: WorkspaceWithStatus | null;
+  emptyMessage?: string;
   onJump(workspace: WorkspaceWithStatus): void;
   onOpenFinder(workspace: WorkspaceWithStatus): void;
   onRename(workspace: WorkspaceWithStatus): void;
@@ -25,6 +26,7 @@ interface WorkspaceDetailProps {
 
 export function WorkspaceDetail({
   workspace,
+  emptyMessage,
   onJump,
   onOpenFinder,
   onRename,
@@ -35,7 +37,9 @@ export function WorkspaceDetail({
     return (
       <main className="workspace-detail-panel" aria-live="polite">
         <div className="detail-empty">
-          <p className="empty-state-message">选择工作区查看详情。</p>
+          <p className="empty-state-message">
+            {emptyMessage ?? '选择工作区查看详情。'}
+          </p>
         </div>
       </main>
     );

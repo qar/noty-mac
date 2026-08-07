@@ -18,6 +18,10 @@ contextBridge.exposeInMainWorld('api', {
   // 设置相关
   getSettings: () => ipcRenderer.invoke('get-settings'),
   updateSettings: (settings) => ipcRenderer.invoke('update-settings', settings),
+  selectProjectsDirectory: (currentValue) =>
+    ipcRenderer.invoke('select-projects-directory', currentValue),
+  saveProjectsDirectory: (directory) =>
+    ipcRenderer.invoke('save-projects-directory', directory),
   selectWorktreesDirectory: (currentValue) =>
     ipcRenderer.invoke('select-worktrees-directory', currentValue),
   saveWorktreesDirectory: (directory) =>
@@ -59,6 +63,15 @@ contextBridge.exposeInMainWorld('api', {
       const listener = (event, view) => callback(view);
       ipcRenderer.on('dashboard:navigate', listener);
       return () => ipcRenderer.removeListener('dashboard:navigate', listener);
+    }
+  },
+
+  projects: {
+    list: () => ipcRenderer.invoke('projects:list'),
+    onUpdated: (callback) => {
+      const listener = () => callback();
+      ipcRenderer.on('projects:updated', listener);
+      return () => ipcRenderer.removeListener('projects:updated', listener);
     }
   },
 

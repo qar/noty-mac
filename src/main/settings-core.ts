@@ -12,24 +12,61 @@ export class WorktreesDirectoryError extends Error {
   }
 }
 
+export class ProjectsDirectoryError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProjectsDirectoryError';
+  }
+}
+
+export function defaultProjectsDirectory(homeDirectory: string): string {
+  return path.join(homeDirectory, 'projects');
+}
+
 export function defaultWorktreesDirectory(homeDirectory: string): string {
   return path.join(homeDirectory, 'worktrees');
+}
+
+export function normalizeProjectsDirectory(
+  value: unknown,
+  homeDirectory: string
+): string {
+  return normalizeDirectory(
+    value,
+    homeDirectory,
+    '项目目录',
+    (message) => new ProjectsDirectoryError(message)
+  );
 }
 
 export function normalizeWorktreesDirectory(
   value: unknown,
   homeDirectory: string
 ): string {
+  return normalizeDirectory(
+    value,
+    homeDirectory,
+    'Worktrees 目录',
+    (message) => new WorktreesDirectoryError(message)
+  );
+}
+
+function normalizeDirectory(
+  value: unknown,
+  homeDirectory: string,
+  label: string,
+  error: (message: string) => Error
+): string {
   if (typeof value !== 'string') {
-    throw new WorktreesDirectoryError('Worktrees 目录格式无效');
+    throw error(`${label}格式无效`);
   }
 
   const trimmed = value.trim();
   if (!trimmed) {
-    throw new WorktreesDirectoryError('Worktrees 目录不能为空');
+    throw error(`${label}不能为空`);
   }
   if (trimmed.length > MAX_DIRECTORY_LENGTH || trimmed.includes('\0')) {
-    throw new WorktreesDirectoryError('Worktrees 目录格式无效');
+    throw error(`${label}格式无效`);
   }
 
   const expanded = trimmed === '~'
@@ -39,7 +76,7 @@ export function normalizeWorktreesDirectory(
       : trimmed;
 
   if (!path.isAbsolute(expanded)) {
-    throw new WorktreesDirectoryError('Worktrees 目录必须使用绝对路径');
+    throw error(`${label}必须使用绝对路径`);
   }
 
   return path.resolve(expanded);
@@ -50,6 +87,16 @@ export function preferencesFromStored(
   homeDirectory: string
 ): AppPreferences {
   const stored = isRecord(value) ? value : {};
+  let projectsDirectory: string;
+  try {
+    projectsDirectory = normalizeProjectsDirectory(
+      stored.projectsDirectory,
+      homeDirectory
+    );
+  } catch {
+    projectsDirectory = defaultProjectsDirectory(homeDirectory);
+  }
+
   let worktreesDirectory: string;
   try {
     worktreesDirectory = normalizeWorktreesDirectory(
@@ -63,6 +110,7 @@ export function preferencesFromStored(
   return {
     soundEnabled: stored.soundEnabled !== false,
     hideRead: stored.hideRead !== false,
+    projectsDirectory,
     worktreesDirectory,
   };
 }
@@ -82,11 +130,40 @@ export function preferencesFromUpdate(
   return {
     soundEnabled: value.soundEnabled,
     hideRead: value.hideRead,
+    projectsDirectory: normalizeProjectsDirectory(
+      value.projectsDirectory,
+      homeDirectory
+    ),
     worktreesDirectory: normalizeWorktreesDirectory(
       value.worktreesDirectory,
       homeDirectory
     ),
   };
+}
+
+export async function ensureProjectsDirectory(directory: string): Promise<string> {
+  try {
+    const stat = await fs.stat(directory);
+    if (!stat.isDirectory()) {
+      throw new ProjectsDirectoryError('项目路径不是目录');
+    }
+    await fs.access(directory, fsConstants.R_OK);
+    await fs.readdir(directory);
+    return await fs.realpath(directory);
+  } catch (error) {
+    if (error instanceof ProjectsDirectoryError) throw error;
+    const code = isRecord(error) && typeof error.code === 'string' ? error.code : '';
+    if (code === 'ENOENT') {
+      throw new ProjectsDirectoryError('项目目录不存在');
+    }
+    if (code === 'EACCES' || code === 'EPERM') {
+      throw new ProjectsDirectoryError('没有权限读取项目目录');
+    }
+    if (code === 'ENOTDIR') {
+      throw new ProjectsDirectoryError('项目路径不是目录');
+    }
+    throw new ProjectsDirectoryError('无法访问项目目录');
+  }
 }
 
 export async function ensureWorktreesDirectory(directory: string): Promise<void> {
