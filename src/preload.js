@@ -90,6 +90,27 @@ contextBridge.exposeInMainWorld('api', {
     }
   },
 
+  workflow: {
+    snapshot: () => ipcRenderer.invoke('workflow:snapshot'),
+    save: (definition) => ipcRenderer.invoke('workflow:save', definition),
+    createRun: (id, input) => ipcRenderer.invoke('workflow:create-run', id, input),
+    completeTask: (runId, taskId, input) => ipcRenderer.invoke('workflow:complete-task', runId, taskId, input),
+    skipTask: (runId, taskId, reason) => ipcRenderer.invoke('workflow:skip-task', runId, taskId, reason),
+    executeTask: (runId, taskId) => ipcRenderer.invoke('workflow:execute-task', runId, taskId),
+    cancelTask: (runId, taskId) => ipcRenderer.invoke('workflow:cancel-task', runId, taskId),
+    cleanupRun: (runId) => ipcRenderer.invoke('workflow:cleanup-run', runId),
+    onUpdated: (callback) => {
+      const listener = () => callback();
+      ipcRenderer.on('workflow:updated', listener);
+      return () => ipcRenderer.removeListener('workflow:updated', listener);
+    },
+    onTaskOutput: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('workflow:task-output', listener);
+      return () => ipcRenderer.removeListener('workflow:task-output', listener);
+    }
+  },
+
   // AI 集成向导 (Settings > AI 集成)
   integration: {
     detect: () => ipcRenderer.invoke('integration:detect'),

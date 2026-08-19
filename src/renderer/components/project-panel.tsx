@@ -1,4 +1,4 @@
-import { Folder, LayoutGrid, Settings } from 'lucide-react';
+import { Folder, LayoutGrid, Settings, Workflow } from 'lucide-react';
 import type { Project } from '../../main/types';
 
 export const ALL_PROJECTS_ID = '__all_projects__';
@@ -9,6 +9,8 @@ interface ProjectPanelProps {
   loadState: 'loading' | 'ready' | 'error';
   onSelect(id: string): void;
   onSettings(): void;
+  onWorkflows(): void;
+  workflowActive: boolean;
 }
 
 export function ProjectPanel({
@@ -17,6 +19,8 @@ export function ProjectPanel({
   loadState,
   onSelect,
   onSettings,
+  onWorkflows,
+  workflowActive,
 }: ProjectPanelProps) {
   return (
     <aside className="project-list-panel" aria-labelledby="projectPanelTitle">
@@ -63,6 +67,14 @@ export function ProjectPanel({
         ) : null}
       </ul>
       <footer className="project-panel-footer">
+        <button
+          type="button"
+          className={`project-settings-button${workflowActive ? ' is-active' : ''}`}
+          onClick={onWorkflows}
+        >
+          <Workflow aria-hidden="true" />
+          <span>工作流</span>
+        </button>
         <button
           type="button"
           className="project-settings-button"

@@ -162,6 +162,153 @@ code {
   grid-template-columns: var(--project-panel-width) minmax(0, 1fr);
 }
 
+.app-shell.is-workflow {
+  grid-template-columns: var(--project-panel-width) minmax(0, 1fr);
+}
+
+/* ----- Workflow orchestration -------------------------------- */
+.workflow-view {
+  min-width: 0;
+  height: 100vh;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  background: var(--color-bg-elevated);
+}
+
+.workflow-browser {
+  min-width: 0;
+  padding-top: var(--title-bar-height);
+  border-right: 1px solid var(--color-divider);
+  background: var(--color-bg-subtle);
+  overflow: auto;
+}
+
+.workflow-toolbar,
+.workflow-section-heading,
+.workflow-stage-header,
+.workflow-detail-header,
+.workflow-task-row,
+.workflow-repository,
+.workflow-task-edit {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.workflow-toolbar {
+  height: 48px;
+  padding: 0 var(--space-3) 0 var(--space-4);
+  justify-content: space-between;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.workflow-toolbar h1 { font-size: var(--fs-title); }
+.workflow-definitions { padding: var(--space-2); }
+.workflow-definition,
+.workflow-run-link {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  text-align: left;
+  border-radius: var(--radius-sm);
+}
+.workflow-definition {
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+}
+.workflow-definition span,
+.workflow-run-link small { color: var(--color-text-secondary); font-size: var(--fs-caption); }
+.workflow-definition.is-active,
+.workflow-run-link.is-active { background: var(--color-accent-subtle); }
+.workflow-run-link {
+  justify-content: space-between;
+  padding: 6px var(--space-3) 6px var(--space-6);
+  color: var(--color-text-secondary);
+}
+
+.workflow-detail {
+  min-width: 0;
+  overflow: auto;
+  padding: calc(var(--title-bar-height) + var(--space-5)) var(--space-6) var(--space-6);
+}
+.workflow-editor,
+.workflow-summary { max-width: 920px; margin: 0 auto; }
+.workflow-detail-header { align-items: flex-start; justify-content: space-between; margin-bottom: var(--space-6); }
+.workflow-detail-header > div:first-child { min-width: 0; flex: 1; }
+.workflow-detail-header > div:last-child { display: flex; gap: var(--space-2); }
+.workflow-detail-header h1 { font-size: var(--fs-page-title); margin-bottom: var(--space-1); }
+.workflow-detail-header p { color: var(--color-text-secondary); }
+.workflow-title-input { width: 100%; font-size: var(--fs-page-title); font-weight: 650; }
+.workflow-detail-header textarea { width: 100%; min-height: 56px; margin-top: var(--space-2); resize: vertical; }
+
+.workflow-section { margin-bottom: var(--space-6); }
+.workflow-section-heading { justify-content: space-between; margin-bottom: var(--space-3); }
+.workflow-section h2,
+.workflow-stage h2 { font-size: var(--fs-title); }
+.workflow-stage h2 small { color: var(--color-text-secondary); font-weight: 400; }
+.workflow-stage {
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-divider);
+}
+.workflow-stage-header { margin-bottom: var(--space-2); }
+.workflow-stage-header input { flex: 1; font-weight: 600; }
+.workflow-repository { margin-bottom: var(--space-2); }
+.workflow-repository input:first-child { width: 120px; }
+.workflow-repository select { flex: 1; min-width: 0; }
+.workflow-task-edit {
+  min-height: 40px;
+  flex-wrap: wrap;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-subtle);
+  margin-bottom: var(--space-2);
+}
+.workflow-task-edit > input:first-child { flex: 1; min-width: 180px; }
+.workflow-task-edit > input:nth-last-child(-n + 2) { min-width: 180px; flex: 1; }
+.workflow-add-task { display: flex; align-items: center; gap: var(--space-1); color: var(--color-accent); padding: var(--space-2); }
+.workflow-add-task svg { width: 15px; height: 15px; }
+.workflow-task-row { min-height: 42px; border-bottom: 1px solid var(--color-divider); }
+.workflow-task-row > span:nth-of-type(2),
+.workflow-task-row > span:first-child:not(.workflow-status) { flex: 1; min-width: 0; }
+.workflow-task-row small { color: var(--color-text-secondary); }
+.workflow-task-actions { display: flex; min-width: 64px; justify-content: flex-end; }
+.workflow-task-block { border-bottom: 1px solid var(--color-divider); }
+.workflow-task-block .workflow-task-row { border-bottom: 0; }
+.workflow-task-meta { display: block; padding: 0 0 var(--space-2) 16px; color: var(--color-text-secondary); font-size: var(--fs-caption); overflow-wrap: anywhere; }
+.workflow-task-meta.is-error { color: var(--color-danger); }
+.workflow-contexts { margin-bottom: var(--space-5); }
+.workflow-contexts h2 { font-size: var(--fs-title); margin-bottom: var(--space-2); }
+.workflow-contexts > div { display: grid; grid-template-columns: 16px 80px minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); min-height: 34px; }
+.workflow-contexts svg { width: 15px; height: 15px; color: var(--color-text-secondary); }
+.workflow-contexts code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-secondary); }
+.workflow-contexts span { color: var(--color-text-secondary); font-size: var(--fs-small); }
+.workflow-status { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: var(--color-text-tertiary); }
+.workflow-status.is-ready,
+.workflow-status.is-running { background: var(--color-accent); }
+.workflow-status.is-succeeded { background: var(--color-success); }
+.workflow-status.is-failed,
+.workflow-status.is-interrupted { background: var(--color-danger); }
+.workflow-empty { height: 100%; display: grid; place-content: center; justify-items: center; gap: var(--space-3); color: var(--color-text-secondary); }
+.workflow-empty > svg { width: 28px; height: 28px; }
+
+.workflow-editor input,
+.workflow-editor select,
+.workflow-editor textarea {
+  min-height: 30px;
+  padding: 5px 8px;
+  color: var(--color-text-primary);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+
+@media (max-width: 920px) {
+  .workflow-view { grid-template-columns: 220px minmax(0, 1fr); }
+  .workflow-detail { padding-left: var(--space-4); padding-right: var(--space-4); }
+}
+
 /* ============================================================
  * Drag region — covers the top 44px so the user can drag the window
  * from the traffic-light row. macOS still lets the traffic-light

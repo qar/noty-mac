@@ -134,6 +134,14 @@ const schema = {
       },
       required: ['id', 'name', 'directory', 'source', 'createdAt', 'updatedAt']
     }
+  },
+  workflowDefinitions: {
+    type: 'array',
+    default: []
+  },
+  workflowRuns: {
+    type: 'array',
+    default: []
   }
 };
 

@@ -20,6 +20,7 @@ import {
 } from './components/workspace-overlays';
 import { POLL_INTERVAL_MS } from './workspace-ui';
 import type { DashboardView } from './renderer-api';
+import { WorkflowView } from './components/workflow-view';
 
 type LoadState = 'loading' | 'ready' | 'error';
 
@@ -49,7 +50,7 @@ export function WorkspaceApp() {
   const showDashboardView = useCallback((view: DashboardView): void => {
     setActiveView(view);
     window.api?.dashboard?.setView(view);
-    if (view === 'settings') {
+    if (view === 'settings' || view === 'workflow') {
       setContextMenu(null);
       setRenaming(null);
       setDeleting(null);
@@ -124,9 +125,9 @@ export function WorkspaceApp() {
     if (!dashboardApi) return;
     let active = true;
     const navigate = (view: DashboardView): void => {
-      if (!active || (view !== 'workspace' && view !== 'settings')) return;
+      if (!active || !['workspace', 'workflow', 'settings'].includes(view)) return;
       setActiveView(view);
-      if (view === 'settings') {
+      if (view === 'settings' || view === 'workflow') {
         setContextMenu(null);
         setRenaming(null);
         setDeleting(null);
@@ -277,6 +278,8 @@ export function WorkspaceApp() {
   const shellStateClass =
     activeView === 'settings'
       ? ' is-settings'
+      : activeView === 'workflow'
+        ? ' is-workflow'
       : hasWorkspaces
         ? ''
         : ' is-empty';
@@ -297,10 +300,14 @@ export function WorkspaceApp() {
             loadState={projectLoadState}
             onSelect={selectProject}
             onSettings={() => showDashboardView('settings')}
+            onWorkflows={() => showDashboardView('workflow')}
+            workflowActive={activeView === 'workflow'}
           />
         )}
         {activeView === 'settings' ? (
           <SettingsView activeTab={settingsTab} />
+        ) : activeView === 'workflow' ? (
+          <WorkflowView projects={projects} />
         ) : hasWorkspaces ? (
           <>
             <WorkspacePanel

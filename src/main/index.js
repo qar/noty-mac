@@ -14,6 +14,7 @@ const { registerIntegrationIpc } = require('./ipc-integration');
 const { registerLocalAiIpc } = require('./ipc-local-ai');
 const { registerSettingsIpc } = require('./ipc-settings');
 const { registerProjectsIpc } = require('./ipc-projects');
+const { registerWorkflowIpc } = require('./ipc-workflow');
 const { setDockIcon } = require('./app-icon');
 const {
   TMUX_SESSION_SNAPSHOT_FORMAT,
@@ -333,6 +334,7 @@ app.whenReady().then(async () => {
   registerLocalAiIpc();
   registerSettingsIpc();
   registerProjectsIpc();
+  registerWorkflowIpc();
   updateTrayIcon();
 
   updater = new Updater();
@@ -695,7 +697,7 @@ function setupIPC() {
 
   ipcMain.handle('dashboard:get-initial-view', () => requestedDashboardView);
   ipcMain.on('dashboard:set-view', (event, view) => {
-    if (view === 'workspace' || view === 'settings') {
+    if (view === 'workspace' || view === 'workflow' || view === 'settings') {
       requestedDashboardView = view;
     }
   });

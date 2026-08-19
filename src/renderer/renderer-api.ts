@@ -14,10 +14,11 @@ import type {
   LocalAiTemplateId,
 } from '../main/local-ai-types';
 import type { AppPreferences } from '../main/settings-types';
+import type { CompleteWorkflowTaskInput, WorkflowDefinition, WorkflowRun, WorkflowRunInput, WorkflowSnapshot } from '../main/workflow-types';
 
 export type { AppPreferences } from '../main/settings-types';
 
-export type DashboardView = 'workspace' | 'settings';
+export type DashboardView = 'workspace' | 'workflow' | 'settings';
 
 export interface JumpOutcome {
   success: boolean;
@@ -76,6 +77,18 @@ export interface UpdateActionResult {
 export interface AppApi {
   workspace: WorkspaceApi;
   projects: ProjectsApi;
+  workflow: {
+    snapshot(): Promise<WorkflowSnapshot>;
+    save(definition: WorkflowDefinition): Promise<WorkflowDefinition>;
+    createRun(id: string, input: WorkflowRunInput): Promise<WorkflowRun>;
+    completeTask(runId: string, taskId: string, input: CompleteWorkflowTaskInput): Promise<WorkflowRun>;
+    skipTask(runId: string, taskId: string, reason: string): Promise<WorkflowRun>;
+    executeTask(runId: string, taskId: string): Promise<WorkflowRun>;
+    cancelTask(runId: string, taskId: string): Promise<boolean>;
+    cleanupRun(runId: string): Promise<WorkflowRun>;
+    onUpdated(callback: () => void): () => void;
+    onTaskOutput(callback: (event: { runId: string; taskId: string; output: string }) => void): () => void;
+  };
   getChannels(): Promise<Channel[]>;
   addChannel(name: string, url: string): Promise<Channel[]>;
   removeChannel(id: string): Promise<Channel[]>;
