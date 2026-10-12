@@ -1,8 +1,21 @@
 import * as path from 'node:path';
-import type { TmuxSessionSnapshot } from './types';
+import type { TmuxPaneSnapshot, TmuxSessionSnapshot } from './types';
 
 export const TMUX_SESSION_SNAPSHOT_FORMAT =
   '#{session_name}\t#{pane_current_path}';
+export const TMUX_PANE_SNAPSHOT_FORMAT =
+  '#{pane_id}\t#{pane_pid}\t#{session_name}\t#{window_name}\t#{pane_index}';
+
+export function parseTmuxPaneSnapshots(output: unknown): TmuxPaneSnapshot[] {
+  if (typeof output !== 'string' || !output.trim()) return [];
+  return output.split('\n').flatMap((line) => {
+    const [id, pid, sessionName, windowName, index, ...extra] = line.trim().split('\t');
+    if (extra.length || !/^%\d+$/.test(id) || !/^\d+$/.test(pid) || !sessionName || !/^\d+$/.test(index)) {
+      return [];
+    }
+    return [{ id, pid: Number(pid), sessionName, windowName, paneIndex: Number(index) }];
+  });
+}
 
 export function parseTmuxSessionSnapshots(
   output: unknown

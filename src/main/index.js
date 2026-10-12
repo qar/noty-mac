@@ -303,7 +303,7 @@ async function jumpToTmuxSession(sessionName) {
 let tray = null;
 let ntfyClient = null;
 let updater = null;
-let requestedDashboardView = 'workspace';
+let requestedDashboardView = 'dashboard';
 
 // 防止应用退出
 app.on('window-all-closed', (e) => {
@@ -328,6 +328,8 @@ app.whenReady().then(async () => {
   setupIPC();
   registerWorkspaceIpc({
     jumpToTmuxSession,
+    jumpToTmuxPane: jumpToTmuxTarget,
+    listTmuxPanes: (format) => execTmux(['list-panes', '-a', '-F', format]),
     syncTmuxToWorkspaces,
   });
   registerIntegrationIpc();
@@ -697,7 +699,7 @@ function setupIPC() {
 
   ipcMain.handle('dashboard:get-initial-view', () => requestedDashboardView);
   ipcMain.on('dashboard:set-view', (event, view) => {
-    if (view === 'workspace' || view === 'workflow' || view === 'settings') {
+    if (view === 'dashboard' || view === 'workspace' || view === 'workflow' || view === 'settings') {
       requestedDashboardView = view;
     }
   });

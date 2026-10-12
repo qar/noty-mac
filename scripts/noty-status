@@ -52,7 +52,20 @@ if ! command -v tmux >/dev/null 2>&1; then
   exit 2
 fi
 
-SESSION="$(tmux display-message -p '#S' 2>/dev/null || true)"
+PANE="${TMUX_PANE:-}"
+if [[ ! "$PANE" =~ ^%[0-9]+$ ]]; then
+  PANE="$(tmux display-message -p '#{pane_id}' 2>/dev/null || true)"
+fi
+if [[ ! "$PANE" =~ ^%[0-9]+$ ]]; then
+  echo "error: unable to identify current tmux pane" >&2
+  exit 3
+fi
+SESSION="$(tmux display-message -p -t "$PANE" '#S' 2>/dev/null || true)"
+PANE_PID="$(tmux display-message -p -t "$PANE" '#{pane_pid}' 2>/dev/null || true)"
+if [[ ! "$PANE_PID" =~ ^[0-9]+$ ]]; then
+  echo "error: unable to identify tmux pane process" >&2
+  exit 3
+fi
 if [[ -z "$SESSION" ]]; then
   echo "error: not attached to a tmux session (\`tmux display-message -p '#S'\` returned empty)" >&2
   exit 3
@@ -105,6 +118,8 @@ MESSAGE_ESC="$(json_escape "$MESSAGE")"
 
 STATUS_FILE="$WORKSPACE_DIR/agent-status.json"
 TMP_FILE="${STATUS_FILE}.tmp.$$"
+PANE_STATUS_FILE="$WORKSPACE_DIR/agent-status-${PANE}.json"
+PANE_TMP_FILE="${PANE_STATUS_FILE}.tmp.$$"
 
 if [[ -n "$MESSAGE" ]]; then
   cat > "$TMP_FILE" <<EOF
@@ -113,7 +128,8 @@ if [[ -n "$MESSAGE" ]]; then
   "message": "$MESSAGE_ESC",
   "agent": "$AGENT_ESC",
   "updatedAt": $UPDATED_AT,
-  "pid": $PID
+  "pid": $PID,
+  "panePid": $PANE_PID
 }
 EOF
 else
@@ -122,12 +138,15 @@ else
   "state": "$STATE",
   "agent": "$AGENT_ESC",
   "updatedAt": $UPDATED_AT,
-  "pid": $PID
+  "pid": $PID,
+  "panePid": $PANE_PID
 }
 EOF
 fi
 
 # Atomic rename ensures readers never see a partially-written file.
+cp -f "$TMP_FILE" "$PANE_TMP_FILE"
+mv -f "$PANE_TMP_FILE" "$PANE_STATUS_FILE"
 mv -f "$TMP_FILE" "$STATUS_FILE"
 
 echo "reported: $STATE → $STATUS_FILE"

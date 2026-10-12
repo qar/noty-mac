@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Project, WorkspaceWithStatus } from '../main/types';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ActiveAiPane, Project, WorkspaceWithStatus } from '../main/types';
+import { AiDashboard } from './components/ai-dashboard';
 import {
   ALL_PROJECTS_ID,
   ProjectPanel,
@@ -34,7 +35,12 @@ export function WorkspaceApp() {
     null
   );
   const [selectedProjectId, setSelectedProjectId] = useState(ALL_PROJECTS_ID);
-  const [activeView, setActiveView] = useState<DashboardView>('workspace');
+  const [activeView, setActiveView] = useState<DashboardView>('dashboard');
+  const [aiPanes, setAiPanes] = useState<ActiveAiPane[]>([]);
+  const [aiLoadState, setAiLoadState] = useState<LoadState>(workspaceApi ? 'loading' : 'error');
+  const [changedPaneIds, setChangedPaneIds] = useState<ReadonlySet<string>>(new Set());
+  const previousPaneVersions = useRef<Map<string, string> | null>(null);
+  const aiRequestId = useRef(0);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
   const [loadState, setLoadState] = useState<LoadState>(
     workspaceApi ? 'loading' : 'error'
@@ -50,7 +56,7 @@ export function WorkspaceApp() {
   const showDashboardView = useCallback((view: DashboardView): void => {
     setActiveView(view);
     window.api?.dashboard?.setView(view);
-    if (view === 'settings' || view === 'workflow') {
+    if (view !== 'workspace') {
       setContextMenu(null);
       setRenaming(null);
       setDeleting(null);
@@ -70,6 +76,36 @@ export function WorkspaceApp() {
     } catch (error) {
       console.error('[main] workspace.list failed:', error);
       setLoadState('error');
+    }
+  }, []);
+
+  const refreshAiPanes = useCallback(async (): Promise<void> => {
+    if (!workspaceApi) return;
+    const requestId = ++aiRequestId.current;
+    try {
+      const next = await workspaceApi.activeAiPanes();
+      if (requestId !== aiRequestId.current) return;
+      const versions = new Map(next.map((item) => [
+        item.pane.id,
+        `${item.pane.pid}:${item.status.updatedAt}:${item.status.state}:${item.status.message ?? ''}`,
+      ]));
+      const previous = previousPaneVersions.current;
+      if (previous) {
+        setChangedPaneIds((current) => {
+          const changed = new Set([...current].filter((id) => versions.has(id)));
+          for (const [id, version] of versions) {
+            if (previous.get(id) !== undefined && previous.get(id) !== version) changed.add(id);
+          }
+          return changed;
+        });
+      }
+      previousPaneVersions.current = versions;
+      setAiPanes(next);
+      setAiLoadState('ready');
+    } catch (error) {
+      if (requestId !== aiRequestId.current) return;
+      console.error('[main] activeAiPanes failed:', error);
+      setAiLoadState('error');
     }
   }, []);
 
@@ -98,17 +134,20 @@ export function WorkspaceApp() {
   useEffect(() => {
     if (!workspaceApi) return;
     void refresh();
+    void refreshAiPanes();
     const unsubscribe = workspaceApi.onUpdated(() => {
       void refresh();
+      void refreshAiPanes();
     });
     const poll = window.setInterval(() => {
       void refresh();
+      void refreshAiPanes();
     }, POLL_INTERVAL_MS);
     return () => {
       window.clearInterval(poll);
       unsubscribe?.();
     };
-  }, [refresh]);
+  }, [refresh, refreshAiPanes]);
 
   useEffect(() => {
     if (!projectsApi) return;
@@ -125,9 +164,9 @@ export function WorkspaceApp() {
     if (!dashboardApi) return;
     let active = true;
     const navigate = (view: DashboardView): void => {
-      if (!active || !['workspace', 'workflow', 'settings'].includes(view)) return;
+      if (!active || !['dashboard', 'workspace', 'workflow', 'settings'].includes(view)) return;
       setActiveView(view);
-      if (view === 'settings' || view === 'workflow') {
+      if (view !== 'workspace') {
         setContextMenu(null);
         setRenaming(null);
         setDeleting(null);
@@ -174,9 +213,28 @@ export function WorkspaceApp() {
 
   const selectProject = useCallback((id: string): void => {
     setSelectedProjectId(id);
+    showDashboardView('workspace');
     setContextMenu(null);
     setRenaming(null);
     setDeleting(null);
+  }, [showDashboardView]);
+
+  const jumpToPane = useCallback(async (item: ActiveAiPane): Promise<void> => {
+    if (!workspaceApi) return;
+    try {
+      const result = await workspaceApi.jumpPane(item.pane.id);
+      if (!result.success) {
+        alert(`跳转失败：${result.reason ?? 'unknown'}`);
+        return;
+      }
+      setChangedPaneIds((current) => {
+        const next = new Set(current);
+        next.delete(item.pane.id);
+        return next;
+      });
+    } catch (error) {
+      alert('跳转失败：' + (error instanceof Error ? error.message : String(error)));
+    }
   }, []);
 
   const syncWorkspaces = useCallback(async (): Promise<void> => {
@@ -276,7 +334,9 @@ export function WorkspaceApp() {
         ? 'error'
         : 'empty';
   const shellStateClass =
-    activeView === 'settings'
+    activeView === 'dashboard'
+      ? ' is-dashboard'
+      : activeView === 'settings'
       ? ' is-settings'
       : activeView === 'workflow'
         ? ' is-workflow'
@@ -291,7 +351,7 @@ export function WorkspaceApp() {
           <SettingsSidebar
             activeTab={settingsTab}
             onSelect={setSettingsTab}
-            onBack={() => showDashboardView('workspace')}
+            onBack={() => showDashboardView('dashboard')}
           />
         ) : (
           <ProjectPanel
@@ -299,12 +359,21 @@ export function WorkspaceApp() {
             selectedId={selectedProjectId}
             loadState={projectLoadState}
             onSelect={selectProject}
+            onDashboard={() => showDashboardView('dashboard')}
+            dashboardActive={activeView === 'dashboard'}
             onSettings={() => showDashboardView('settings')}
             onWorkflows={() => showDashboardView('workflow')}
             workflowActive={activeView === 'workflow'}
           />
         )}
-        {activeView === 'settings' ? (
+        {activeView === 'dashboard' ? (
+          <AiDashboard
+            panes={aiPanes}
+            loadState={aiLoadState}
+            changedPaneIds={changedPaneIds}
+            onJump={(item) => void jumpToPane(item)}
+          />
+        ) : activeView === 'settings' ? (
           <SettingsView activeTab={settingsTab} />
         ) : activeView === 'workflow' ? (
           <WorkflowView projects={projects} />

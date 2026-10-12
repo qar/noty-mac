@@ -17,6 +17,14 @@ export interface TmuxSessionSnapshot {
   workingDirectory: string | null;
 }
 
+export interface TmuxPaneSnapshot {
+  id: string;
+  pid: number;
+  sessionName: string;
+  windowName: string;
+  paneIndex: number;
+}
+
 export interface Workspace {
   id: string;
   name: string;
@@ -87,6 +95,8 @@ export interface AgentStatus {
   updatedAt: number;
   /** Optional: reporting process PID. */
   pid?: number;
+  /** tmux pane's original process; guards against pane ID reuse. */
+  panePid?: number;
 }
 
 export interface WorkspaceWithStatus extends Workspace {
@@ -95,4 +105,12 @@ export interface WorkspaceWithStatus extends Workspace {
   agentStatus: AgentStatus | null;
   /** Absolute project directory derived from the configured projects root. */
   projectId: string | null;
+}
+
+export interface ActiveAiPane {
+  pane: TmuxPaneSnapshot;
+  workspaceId: string;
+  workspaceName: string;
+  projectId: string | null;
+  status: AgentStatus;
 }

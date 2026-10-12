@@ -78,6 +78,8 @@ contextBridge.exposeInMainWorld('api', {
   // 工作区 (Workspace) —— Step 3d
   workspace: {
     list: () => ipcRenderer.invoke('workspace:list'),
+    activeAiPanes: () => ipcRenderer.invoke('workspace:active-ai-panes'),
+    jumpPane: (paneId) => ipcRenderer.invoke('workspace:jump-pane', paneId),
     syncFromTmux: () => ipcRenderer.invoke('workspace:sync-tmux'),
     jump: (id) => ipcRenderer.invoke('workspace:jump', id),
     openInFinder: (id) => ipcRenderer.invoke('workspace:open-in-finder', id),

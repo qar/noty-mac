@@ -28,6 +28,8 @@ import type {
   AgentState,
   WorkspaceWithStatus,
   TmuxSessionSnapshot,
+  TmuxPaneSnapshot,
+  ActiveAiPane,
 } from './types';
 
 // electron-store is CommonJS in the version pinned here; type it loosely to
@@ -261,8 +263,11 @@ const VALID_STATES: readonly AgentState[] = [
   'error',
 ];
 
-async function readAgentStatus(workspaceDir: string): Promise<AgentStatus | null> {
-  const file = path.join(workspaceDir, AGENT_STATUS_FILENAME);
+async function readAgentStatus(
+  workspaceDir: string,
+  filename = AGENT_STATUS_FILENAME
+): Promise<AgentStatus | null> {
+  const file = path.join(workspaceDir, filename);
   let content: string;
   try {
     content = await fs.readFile(file, 'utf-8');
@@ -292,6 +297,7 @@ async function readAgentStatus(workspaceDir: string): Promise<AgentStatus | null
     agent: typeof obj.agent === 'string' ? obj.agent : undefined,
     updatedAt,
     pid: typeof obj.pid === 'number' ? obj.pid : undefined,
+    panePid: typeof obj.panePid === 'number' ? obj.panePid : undefined,
   };
 }
 
@@ -309,6 +315,29 @@ export async function listWithStatus(): Promise<WorkspaceWithStatus[]> {
       ),
     }))
   );
+}
+
+/** Reported non-idle agents whose tmux pane still exists. */
+export async function listActiveAiPanes(panes: TmuxPaneSnapshot[]): Promise<ActiveAiPane[]> {
+  const bySession = new Map(
+    list().filter((ws) => ws.tmuxSessionName).map((ws) => [ws.tmuxSessionName, ws])
+  );
+  const projectsDirectory = await getCanonicalProjectsDirectory();
+  const active = await Promise.all(panes.map(async (pane) => {
+    const ws = bySession.get(pane.sessionName);
+    if (!ws) return null;
+    const status = await readAgentStatus(ws.directory, `agent-status-${pane.id}.json`);
+    if (!status || status.state === 'idle' || (status.panePid && status.panePid !== pane.pid)) return null;
+    return {
+      pane,
+      workspaceId: ws.id,
+      workspaceName: ws.name,
+      projectId: projectIdForWorkingDirectory(projectsDirectory, ws.workingDirectory),
+      status,
+    };
+  }));
+  return active.filter((item): item is ActiveAiPane => item !== null)
+    .sort((a, b) => b.status.updatedAt - a.status.updatedAt);
 }
 
 function normalizeWorkingDirectory(value: unknown): string | null {

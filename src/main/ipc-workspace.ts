@@ -9,7 +9,8 @@
 // heavy tmux orchestration in one place until we do a proper tmux refactor.
 
 import { ipcMain, shell } from 'electron';
-import type { RemoveOptions, Workspace, WorkspaceWithStatus } from './types';
+import type { ActiveAiPane, RemoveOptions, Workspace, WorkspaceWithStatus } from './types';
+import { parseTmuxPaneSnapshots, TMUX_PANE_SNAPSHOT_FORMAT } from './tmux-workspace';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const workspace = require('./workspace');
@@ -25,11 +26,30 @@ export interface WorkspaceIpcDeps {
   /** The same sync flow the tray menu triggers. Runs read-only tmux
    *  list-sessions internally and posts a system notification. */
   syncTmuxToWorkspaces: () => Promise<void>;
+  listTmuxPanes: (format: string) => Promise<string>;
+  jumpToTmuxPane: (paneId: string) => Promise<JumpOutcome>;
 }
 
 export function registerWorkspaceIpc(deps: WorkspaceIpcDeps): void {
   ipcMain.handle('workspace:list', async (): Promise<WorkspaceWithStatus[]> => {
     return workspace.listWithStatus();
+  });
+
+  ipcMain.handle('workspace:active-ai-panes', async (): Promise<ActiveAiPane[]> => {
+    try {
+      const output = await deps.listTmuxPanes(TMUX_PANE_SNAPSHOT_FORMAT);
+      return workspace.listActiveAiPanes(parseTmuxPaneSnapshots(output));
+    } catch (error) {
+      console.warn('[workspace-ipc] failed to list tmux panes:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('workspace:jump-pane', async (_event, paneId: string): Promise<JumpOutcome> => {
+    if (typeof paneId !== 'string' || !/^%\d+$/.test(paneId)) {
+      return { success: false, reason: 'invalid_target' };
+    }
+    return deps.jumpToTmuxPane(paneId);
   });
 
   ipcMain.handle('workspace:sync-tmux', async (): Promise<void> => {

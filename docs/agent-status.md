@@ -10,6 +10,10 @@ Noty 只**读取**这个文件，绝对不修改，也不写它。上报完全�
 
 **位置**：`~/Library/Application Support/noty-mac/workspaces/<workspace-uuid>/agent-status.json`
 
+Dashboard 按 tmux pane 展示状态。使用 `noty-status` 时，同一次上报还会写入 `agent-status-<pane-id>.json`（例如 `agent-status-%42.json`）。Dashboard 只列出 tmux 中仍存在、且最后一次上报不是 `idle` 的 pane；状态超过 5 分钟未更新时显示灰圈。原来的 `agent-status.json` 继续供工作区列表使用。
+
+Dashboard 每 3 秒刷新。pane 的状态、消息或上报时间变化时，状态圈会高亮；点击该行跳转到对应 pane 后，高亮消失。
+
 **Schema**：
 
 ```jsonc
@@ -18,7 +22,8 @@ Noty 只**读取**这个文件，绝对不修改，也不写它。上报完全�
   "message": "生成代码中",       // 可选。一句话摘要，会显示在列表项副标题和详情面板
   "agent": "claude-code",       // 可选。多 agent 场景下区分来源
   "updatedAt": 1720098000000,   // 必填。ms epoch，Noty 用它判断是否 stale
-  "pid": 12345                  // 可选。上报进程的 PID
+  "pid": 12345,                 // 可选。上报进程的 PID
+  "panePid": 12346              // pane 文件使用；tmux pane 的进程 PID
 }
 ```
 
@@ -83,9 +88,9 @@ noty-status idle
 ```
 
 **脚本会做什么**：
-1. 读取当前 tmux session 名（`tmux display-message -p '#S'`）。**必须在 tmux 里跑**。
+1. 从 `$TMUX_PANE` 读取 pane ID，并查询对应 tmux session。**必须在 tmux 里跑**。
 2. 扫描 `workspaces/*/workspace.json`，找到 `tmuxSessionName` 匹配的那个工作区。
-3. 原子写入 `agent-status.json`（tmp file + `mv -f`），保证 Noty 不会读到半写状态。
+3. 原子写入 pane 专属状态文件和兼容用的 `agent-status.json`（tmp file + `mv -f`），保证 Noty 不会读到半写状态。
 
 ### 环境变量
 
@@ -176,7 +181,8 @@ root = Path.home() / 'Library/Application Support/noty-mac/workspaces'
 for meta in root.glob('*/workspace.json'):
     data = json.loads(meta.read_text())
     if data.get('tmuxSessionName') == session:
-        target = meta.parent / 'agent-status.json'
+        pane_id = os.environ['TMUX_PANE']  # e.g. %42
+        target = meta.parent / f'agent-status-{pane_id}.json'
         payload = {
             'state': 'running',
             'message': 'training model epoch 3/10',
@@ -187,6 +193,7 @@ for meta in root.glob('*/workspace.json'):
         tmp = target.with_suffix('.tmp')
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
         tmp.replace(target)  # atomic rename
+        # Optional: also write agent-status.json for the workspace list.
         break
 ```
 

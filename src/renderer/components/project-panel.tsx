@@ -1,4 +1,4 @@
-import { Folder, LayoutGrid, Settings, Workflow } from 'lucide-react';
+import { Folder, LayoutDashboard, LayoutGrid, Settings, Workflow } from 'lucide-react';
 import type { Project } from '../../main/types';
 
 export const ALL_PROJECTS_ID = '__all_projects__';
@@ -8,6 +8,8 @@ interface ProjectPanelProps {
   selectedId: string;
   loadState: 'loading' | 'ready' | 'error';
   onSelect(id: string): void;
+  onDashboard(): void;
+  dashboardActive: boolean;
   onSettings(): void;
   onWorkflows(): void;
   workflowActive: boolean;
@@ -18,6 +20,8 @@ export function ProjectPanel({
   selectedId,
   loadState,
   onSelect,
+  onDashboard,
+  dashboardActive,
   onSettings,
   onWorkflows,
   workflowActive,
@@ -30,11 +34,26 @@ export function ProjectPanel({
         </div>
       </header>
       <ul className="project-list" role="listbox" aria-label="项目">
+        <li role="none">
+          <button
+            type="button"
+            className={`project-list-item${dashboardActive ? ' is-active' : ''}`}
+            role="option"
+            aria-selected={dashboardActive}
+            onClick={onDashboard}
+          >
+            <LayoutDashboard className="project-list-item-icon" aria-hidden="true" />
+            <span className="project-list-item-copy">
+              <span className="project-list-item-title">总览</span>
+              <span className="project-list-item-path">活跃 AI Pane</span>
+            </span>
+          </button>
+        </li>
         <ProjectListItem
           id={ALL_PROJECTS_ID}
           name="全部项目"
           subtitle="所有工作区"
-          selectedId={selectedId}
+          selectedId={dashboardActive ? '' : selectedId}
           icon={LayoutGrid}
           onSelect={onSelect}
         />
@@ -45,7 +64,7 @@ export function ProjectPanel({
               id={project.id}
               name={project.name}
               subtitle={project.directory}
-              selectedId={selectedId}
+              selectedId={dashboardActive ? '' : selectedId}
               icon={Folder}
               onSelect={onSelect}
             />

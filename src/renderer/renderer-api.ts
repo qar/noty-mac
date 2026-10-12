@@ -1,5 +1,6 @@
 import type {
   Project,
+  ActiveAiPane,
   RemoveOptions,
   Workspace,
   WorkspaceWithStatus,
@@ -18,7 +19,7 @@ import type { CompleteWorkflowTaskInput, WorkflowDefinition, WorkflowRun, Workfl
 
 export type { AppPreferences } from '../main/settings-types';
 
-export type DashboardView = 'workspace' | 'workflow' | 'settings';
+export type DashboardView = 'dashboard' | 'workspace' | 'workflow' | 'settings';
 
 export interface JumpOutcome {
   success: boolean;
@@ -27,6 +28,8 @@ export interface JumpOutcome {
 
 export interface WorkspaceApi {
   list(): Promise<WorkspaceWithStatus[]>;
+  activeAiPanes(): Promise<ActiveAiPane[]>;
+  jumpPane(paneId: string): Promise<JumpOutcome>;
   syncFromTmux(): Promise<void>;
   jump(id: string): Promise<JumpOutcome>;
   openInFinder(id: string): Promise<boolean>;
