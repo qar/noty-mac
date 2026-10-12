@@ -38,7 +38,7 @@ export function SettingsSidebar({
       <footer className="settings-sidebar-footer">
         <button type="button" className="settings-back-button" onClick={onBack}>
           <ArrowLeft aria-hidden="true" />
-          <span>返回工作区</span>
+          <span>返回总览</span>
         </button>
       </footer>
     </aside>

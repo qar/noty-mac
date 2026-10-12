@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ActiveAiPane, Project, WorkspaceWithStatus } from '../main/types';
 import { AiDashboard } from './components/ai-dashboard';
+import { DashboardRail } from './components/dashboard-rail';
 import {
   ALL_PROJECTS_ID,
   ProjectPanel,
@@ -87,14 +88,14 @@ export function WorkspaceApp() {
       if (requestId !== aiRequestId.current) return;
       const versions = new Map(next.map((item) => [
         item.pane.id,
-        `${item.pane.pid}:${item.status.updatedAt}:${item.status.state}:${item.status.message ?? ''}`,
+        `${item.pane.pid}:${item.activityVersion}:${item.status?.updatedAt ?? ''}:${item.status?.state ?? ''}:${item.status?.message ?? ''}`,
       ]));
       const previous = previousPaneVersions.current;
       if (previous) {
         setChangedPaneIds((current) => {
           const changed = new Set([...current].filter((id) => versions.has(id)));
           for (const [id, version] of versions) {
-            if (previous.get(id) !== undefined && previous.get(id) !== version) changed.add(id);
+            if (previous.get(id) !== version) changed.add(id);
           }
           return changed;
         });
@@ -347,7 +348,13 @@ export function WorkspaceApp() {
   return (
     <>
       <div className={`app-shell${shellStateClass}`}>
-        {activeView === 'settings' ? (
+        {activeView === 'dashboard' ? (
+          <DashboardRail
+            onWorkspaces={() => showDashboardView('workspace')}
+            onWorkflows={() => showDashboardView('workflow')}
+            onSettings={() => showDashboardView('settings')}
+          />
+        ) : activeView === 'settings' ? (
           <SettingsSidebar
             activeTab={settingsTab}
             onSelect={setSettingsTab}
@@ -360,7 +367,6 @@ export function WorkspaceApp() {
             loadState={projectLoadState}
             onSelect={selectProject}
             onDashboard={() => showDashboardView('dashboard')}
-            dashboardActive={activeView === 'dashboard'}
             onSettings={() => showDashboardView('settings')}
             onWorkflows={() => showDashboardView('workflow')}
             workflowActive={activeView === 'workflow'}

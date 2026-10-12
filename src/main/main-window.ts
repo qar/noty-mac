@@ -45,17 +45,7 @@ function createMainWindow(): BrowserWindow {
     show: false,
     title: 'Noty',
     titleBarStyle: 'hiddenInset',
-    // macOS sidebar vibrancy — the design spec (§7.4) says the main window's
-    // outer chrome is opaque `--color-bg-elevated`; the sidebar itself picks
-    // up the system vibrancy material via CSS `-webkit-app-region` + the
-    // window-level material set here. Setting `sidebar` gives the whole
-    // window the sidebar material; the renderer CSS then paints an opaque
-    // panel over the content area only.
-    vibrancy: 'sidebar',
-    // NOTE: Do NOT set `backgroundColor: '#00000000'` here. On macOS the
-    // combination of hiddenInset + vibrancy + a fully transparent background
-    // makes Electron treat the window as chromeless — the OS then omits the
-    // native resize handles and the top drag region.
+    backgroundColor: '#101411',
     webPreferences: {
       preload: preloadPath(),
       contextIsolation: true,

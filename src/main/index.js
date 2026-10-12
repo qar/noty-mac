@@ -93,6 +93,15 @@ function execTmux(args) {
   });
 }
 
+function listProcesses() {
+  return new Promise((resolve, reject) => {
+    execFile('/bin/ps', ['-A', '-o', 'pid=,ppid=,comm='], { timeout: 5000 }, (error, stdout) => {
+      if (error) reject(error);
+      else resolve(stdout || '');
+    });
+  });
+}
+
 function execOpen(args) {
   return new Promise((resolve, reject) => {
     execFile('/usr/bin/open', args, { timeout: 5000 }, (error, stdout, stderr) => {
@@ -330,6 +339,10 @@ app.whenReady().then(async () => {
     jumpToTmuxSession,
     jumpToTmuxPane: jumpToTmuxTarget,
     listTmuxPanes: (format) => execTmux(['list-panes', '-a', '-F', format]),
+    listProcesses,
+    capturePaneDigest: async (paneId) => crypto.createHash('sha256')
+      .update(await execTmux(['capture-pane', '-p', '-t', paneId, '-S', '-40']))
+      .digest('hex'),
     syncTmuxToWorkspaces,
   });
   registerIntegrationIpc();
@@ -337,6 +350,9 @@ app.whenReady().then(async () => {
   registerSettingsIpc();
   registerProjectsIpc();
   registerWorkflowIpc();
+  if (process.argv.includes('--show-main-window')) {
+    openMainWindow();
+  }
   updateTrayIcon();
 
   updater = new Updater();

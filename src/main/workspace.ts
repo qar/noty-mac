@@ -317,27 +317,42 @@ export async function listWithStatus(): Promise<WorkspaceWithStatus[]> {
   );
 }
 
-/** Reported non-idle agents whose tmux pane still exists. */
-export async function listActiveAiPanes(panes: TmuxPaneSnapshot[]): Promise<ActiveAiPane[]> {
+/** Running AI processes in live tmux panes, enriched with reported status. */
+export async function listActiveAiPanes(
+  panes: TmuxPaneSnapshot[],
+  detected: Map<string, string>,
+  activityVersions: Map<string, string>
+): Promise<ActiveAiPane[]> {
   const bySession = new Map(
     list().filter((ws) => ws.tmuxSessionName).map((ws) => [ws.tmuxSessionName, ws])
   );
   const projectsDirectory = await getCanonicalProjectsDirectory();
   const active = await Promise.all(panes.map(async (pane) => {
+    const agentName = detected.get(pane.id);
+    if (!agentName) return null;
     const ws = bySession.get(pane.sessionName);
-    if (!ws) return null;
-    const status = await readAgentStatus(ws.directory, `agent-status-${pane.id}.json`);
-    if (!status || status.state === 'idle' || (status.panePid && status.panePid !== pane.pid)) return null;
+    const reported = ws
+      ? await readAgentStatus(ws.directory, `agent-status-${pane.id}.json`)
+      : null;
+    const status = reported && (!reported.panePid || reported.panePid === pane.pid) && reported.state !== 'idle'
+      ? reported
+      : null;
     return {
       pane,
-      workspaceId: ws.id,
-      workspaceName: ws.name,
-      projectId: projectIdForWorkingDirectory(projectsDirectory, ws.workingDirectory),
+      workspaceId: ws?.id ?? null,
+      workspaceName: ws?.name ?? pane.sessionName,
+      projectId: ws
+        ? projectIdForWorkingDirectory(projectsDirectory, ws.workingDirectory)
+        : null,
+      agentName,
       status,
+      activityVersion: activityVersions.get(pane.id) ?? '',
     };
   }));
   return active.filter((item): item is ActiveAiPane => item !== null)
-    .sort((a, b) => b.status.updatedAt - a.status.updatedAt);
+    .sort((a, b) => (b.status?.updatedAt ?? 0) - (a.status?.updatedAt ?? 0)
+      || a.pane.sessionName.localeCompare(b.pane.sessionName)
+      || a.pane.paneIndex - b.pane.paneIndex);
 }
 
 function normalizeWorkingDirectory(value: unknown): string | null {

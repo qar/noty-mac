@@ -10,6 +10,7 @@
 
 import { ipcMain, shell } from 'electron';
 import type { ActiveAiPane, RemoveOptions, Workspace, WorkspaceWithStatus } from './types';
+import { detectAiPanes } from './ai-pane-detection';
 import { parseTmuxPaneSnapshots, TMUX_PANE_SNAPSHOT_FORMAT } from './tmux-workspace';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -27,6 +28,8 @@ export interface WorkspaceIpcDeps {
    *  list-sessions internally and posts a system notification. */
   syncTmuxToWorkspaces: () => Promise<void>;
   listTmuxPanes: (format: string) => Promise<string>;
+  listProcesses: () => Promise<string>;
+  capturePaneDigest: (paneId: string) => Promise<string>;
   jumpToTmuxPane: (paneId: string) => Promise<JumpOutcome>;
 }
 
@@ -37,8 +40,22 @@ export function registerWorkspaceIpc(deps: WorkspaceIpcDeps): void {
 
   ipcMain.handle('workspace:active-ai-panes', async (): Promise<ActiveAiPane[]> => {
     try {
-      const output = await deps.listTmuxPanes(TMUX_PANE_SNAPSHOT_FORMAT);
-      return workspace.listActiveAiPanes(parseTmuxPaneSnapshots(output));
+      const [tmuxOutput, processOutput] = await Promise.all([
+        deps.listTmuxPanes(TMUX_PANE_SNAPSHOT_FORMAT),
+        deps.listProcesses(),
+      ]);
+      const panes = parseTmuxPaneSnapshots(tmuxOutput);
+      const detected = detectAiPanes(panes, processOutput);
+      const activityVersions = new Map(await Promise.all(
+        [...detected.keys()].map(async (id): Promise<[string, string]> => {
+          try {
+            return [id, await deps.capturePaneDigest(id)];
+          } catch {
+            return [id, ''];
+          }
+        })
+      ));
+      return workspace.listActiveAiPanes(panes, detected, activityVersions);
     } catch (error) {
       console.warn('[workspace-ipc] failed to list tmux panes:', error);
       return [];

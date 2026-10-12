@@ -10,9 +10,9 @@ Noty 只**读取**这个文件，绝对不修改，也不写它。上报完全�
 
 **位置**：`~/Library/Application Support/noty-mac/workspaces/<workspace-uuid>/agent-status.json`
 
-Dashboard 按 tmux pane 展示状态。使用 `noty-status` 时，同一次上报还会写入 `agent-status-<pane-id>.json`（例如 `agent-status-%42.json`）。Dashboard 只列出 tmux 中仍存在、且最后一次上报不是 `idle` 的 pane；状态超过 5 分钟未更新时显示灰圈。原来的 `agent-status.json` 继续供工作区列表使用。
+Dashboard 会从仍存在的 tmux pane 的进程树中发现 Claude、Codex、Gemini、OpenCode、Aider、Cursor Agent 和 Amp。即使没有运行 `noty-status`，这些 pane 也会显示为“已启动”。有上报文件时，使用更精确的 AI 状态。`noty-status` 同一次上报还会写入 `agent-status-<pane-id>.json`（例如 `agent-status-%42.json`）；状态超过 5 分钟未更新时显示灰圈。原来的 `agent-status.json` 继续供工作区列表使用。
 
-Dashboard 每 3 秒刷新。pane 的状态、消息或上报时间变化时，状态圈会高亮；点击该行跳转到对应 pane 后，高亮消失。
+Dashboard 每 3 秒刷新。pane 的状态、消息、上报时间或终端输出变化时，状态圈会高亮；点击该行跳转到对应 pane 后，高亮消失。终端输出只在主进程中计算摘要，不保存，也不传给页面。
 
 **Schema**：
 

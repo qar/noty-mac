@@ -9,7 +9,6 @@ interface ProjectPanelProps {
   loadState: 'loading' | 'ready' | 'error';
   onSelect(id: string): void;
   onDashboard(): void;
-  dashboardActive: boolean;
   onSettings(): void;
   onWorkflows(): void;
   workflowActive: boolean;
@@ -21,7 +20,6 @@ export function ProjectPanel({
   loadState,
   onSelect,
   onDashboard,
-  dashboardActive,
   onSettings,
   onWorkflows,
   workflowActive,
@@ -37,9 +35,9 @@ export function ProjectPanel({
         <li role="none">
           <button
             type="button"
-            className={`project-list-item${dashboardActive ? ' is-active' : ''}`}
+            className="project-list-item"
             role="option"
-            aria-selected={dashboardActive}
+            aria-selected={false}
             onClick={onDashboard}
           >
             <LayoutDashboard className="project-list-item-icon" aria-hidden="true" />
@@ -53,7 +51,7 @@ export function ProjectPanel({
           id={ALL_PROJECTS_ID}
           name="全部项目"
           subtitle="所有工作区"
-          selectedId={dashboardActive ? '' : selectedId}
+          selectedId={selectedId}
           icon={LayoutGrid}
           onSelect={onSelect}
         />
@@ -64,7 +62,7 @@ export function ProjectPanel({
               id={project.id}
               name={project.name}
               subtitle={project.directory}
-              selectedId={dashboardActive ? '' : selectedId}
+              selectedId={selectedId}
               icon={Folder}
               onSelect={onSelect}
             />

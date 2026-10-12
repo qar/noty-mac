@@ -40,7 +40,7 @@ function renderNotifications() {
   if (displayNotifications.length === 0) {
     listEl.innerHTML = `
       <div class="empty-state">
-        <div class="empty-state-icon">🔔</div>
+        <div class="empty-state-icon">○</div>
         <div>暂无通知</div>
       </div>
     `;
@@ -75,7 +75,7 @@ function renderNotifications() {
 
     const channelHtml = singleChannel
       ? ''
-      : `<div class="notification-channel">📢 ${escapeHtml(channelName)}</div>`;
+      : `<div class="notification-channel">频道 / ${escapeHtml(channelName)}</div>`;
 
     const jumpIndicator = hasTmux ? ' <span class="jump-indicator">↗</span>' : '';
     const countBadge = count > 1

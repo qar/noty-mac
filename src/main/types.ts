@@ -109,8 +109,11 @@ export interface WorkspaceWithStatus extends Workspace {
 
 export interface ActiveAiPane {
   pane: TmuxPaneSnapshot;
-  workspaceId: string;
+  workspaceId: string | null;
   workspaceName: string;
   projectId: string | null;
-  status: AgentStatus;
+  agentName: string;
+  status: AgentStatus | null;
+  /** Hash of captured terminal output, never the output itself. */
+  activityVersion: string;
 }
