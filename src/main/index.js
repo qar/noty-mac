@@ -4,7 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const store = require('./store');
 const NtfyClient = require('./ntfy-client');
-const { channelFromInput, safeWebUrl, isPendingNotification, clearReadNotifications, setNotificationCompleted } = require('./notification-core');
+const { channelFromInput, safeWebUrl, isPendingNotification, clearReadNotifications, setNotificationCompleted, setNotificationsDismissed } = require('./notification-core');
 const Updater = require('./updater');
 const { toggleWindow, showNotification, getSelectedNotificationId, getWindow } = require('./window');
 const { openMainWindow, hideMainWindow, getMainWindow, destroyMainWindow } = require('./main-window');
@@ -84,6 +84,13 @@ function publicChannels() {
 function notificationsChanged() {
   updateTrayIcon();
   getWindow()?.webContents.send('notifications-updated');
+}
+
+function dismissNotifications(ids, dismissed) {
+  const notifications = setNotificationsDismissed(store.get('notifications'), ids, dismissed);
+  store.set('notifications', notifications);
+  notificationsChanged();
+  return notifications;
 }
 
 function execTmux(args) {
@@ -668,11 +675,25 @@ function setupIPC() {
     return notifications;
   });
 
-  // 根据通知跳转 tmux 目标
+  ipcMain.handle('set-notifications-dismissed', (_event, ids, dismissed) => {
+    if (!Array.isArray(ids) || !ids.every(id => typeof id === 'string') || typeof dismissed !== 'boolean') throw new Error('提醒状态无效');
+    return dismissNotifications(ids, dismissed);
+  });
+
+  // Only reminders visible in the clicked group are dismissed after navigation.
   ipcMain.handle('jump-to-notification-target', async (event, id, options = {}) => {
     const notifications = store.get('notifications');
     const notification = notifications.find(n => n.id === id);
-    return openNotificationTarget(notification, options);
+    if (!notification) return { success: false, reason: '提醒已不存在' };
+    options = options && typeof options === 'object' ? options : {};
+    const relatedIds = new Set(Array.isArray(options.notificationIds) ? options.notificationIds : []);
+    const target = resolveNotificationTmuxTarget(notification);
+    const ids = notifications.filter(item => item.id === id || (notification.type !== 'plane' && target
+      && relatedIds.has(item.id) && item.type !== 'plane' && item.channelId === notification.channelId
+      && resolveNotificationTmuxTarget(item) === target)).map(item => item.id);
+    const result = await openNotificationTarget(notification, options);
+    if (result.success) dismissNotifications(ids, true);
+    return result;
   });
 
   // 获取频道列表

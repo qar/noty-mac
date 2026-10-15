@@ -229,7 +229,6 @@ input {
 .notification-raw[open] summary { margin-bottom: 8px; }
 .notification-bottom { display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-top: 6px; min-height: 28px; }
 .notification-channel { margin: 0; overflow-wrap: anywhere; min-width: 0; }
-.complete-notification { color: var(--legacy-success); border-color: var(--legacy-border); }
 .notification-warning { color: var(--legacy-accent); font-size: 11px; margin-top: 5px; }
 .notification-error { display: flex; align-items: center; padding: 8px 16px; color: var(--legacy-danger); border-bottom: 1px solid var(--legacy-border); overflow-wrap: anywhere; }
 .empty-state p { margin-top: 12px; }

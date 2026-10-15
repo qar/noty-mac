@@ -1,8 +1,8 @@
-import { EyeOff, FolderOpen, LoaderCircle, Save, Volume2 } from 'lucide-react';
+import { FolderOpen, LoaderCircle, Save, Volume2 } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import type { AppPreferences } from '../../renderer-api';
 
-type TogglePreferenceKey = 'soundEnabled' | 'hideRead';
+type TogglePreferenceKey = 'soundEnabled';
 type DirectoryPreferenceKey = 'projectsDirectory' | 'worktreesDirectory';
 type PreferenceKey = TogglePreferenceKey | DirectoryPreferenceKey;
 type DirectoryFeedback = {
@@ -152,13 +152,6 @@ export function GeneralSettings() {
               checked={preferences.soundEnabled}
               disabled={Boolean(saving) || Boolean(selectingDirectory)}
               onToggle={() => void togglePreference('soundEnabled')}
-            />
-            <PreferenceRow
-              icon={EyeOff}
-              label="隐藏已读通知"
-              checked={preferences.hideRead}
-              disabled={Boolean(saving) || Boolean(selectingDirectory)}
-              onToggle={() => void togglePreference('hideRead')}
             />
           </div>
         ) : null}

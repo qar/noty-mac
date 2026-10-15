@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BellPlus, Check, CheckCheck, ExternalLink, Inbox, MailCheck, RotateCcw, Settings } from 'lucide-react';
+import { Archive, BellPlus, ExternalLink, Inbox, RotateCcw, Settings } from 'lucide-react';
 import type { AppNotification, Channel } from '../main/notification-types';
-import { planeCommentPreview } from '../main/notification-core';
+import { isPendingNotification, planeCommentPreview } from '../main/notification-core';
 import './renderer-api';
 
-type View = 'all' | 'pending' | 'completed';
+type View = 'active' | 'history';
 
 function groupNotifications(items: AppNotification[], selectedId: string | null): AppNotification[][] {
   const groups: AppNotification[][] = [];
@@ -23,8 +23,7 @@ function groupNotifications(items: AppNotification[], selectedId: string | null)
 function Notifications() {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
-  const [hideRead, setHideRead] = useState(true);
-  const [view, setView] = useState<View>('all');
+  const [view, setView] = useState<View>('active');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -32,12 +31,11 @@ function Notifications() {
 
   const refresh = useCallback(async () => {
     try {
-      const [items, sources, settings] = await Promise.all([
-        window.api.getNotifications(), window.api.getChannels(), window.api.getSettings(),
+      const [items, sources] = await Promise.all([
+        window.api.getNotifications(), window.api.getChannels(),
       ]);
       setNotifications(items);
       setChannels(sources);
-      setHideRead(settings.hideRead);
       return items;
     } catch {
       setError('无法载入通知，请重试');
@@ -53,7 +51,7 @@ function Notifications() {
       if (!active || !id) return;
       const item = items?.find(entry => entry.id === id);
       if (!item) return;
-      setView(item.type === 'plane' ? item.completedAt ? 'completed' : 'pending' : 'all');
+      setView(isPendingNotification(item) ? 'active' : 'history');
       setSelection(previous => ({ id, version: previous.version + 1 }));
     };
     const off = [
@@ -93,37 +91,33 @@ function Notifications() {
       const hasTarget = item.type === 'plane' || item.metadata?.tmux?.target
         || /^\s*(?:🖥\s*)?tmux\s*:/im.test(item.message);
       if (hasTarget) {
-        const result = await window.api.jumpToNotificationTarget(item.id);
+        const result = await window.api.jumpToNotificationTarget(item.id, { notificationIds: group.map(entry => entry.id) });
         if (!result.success) throw new Error(item.type === 'plane' ? result.reason : '无法跳转到 tmux，请确认会话仍在运行');
       }
     });
   };
 
-  const pending = notifications.filter(item => item.type === 'plane' && !item.completedAt);
-  const visible = notifications.filter(item => {
-    if (view === 'pending') return item.type === 'plane' && !item.completedAt;
-    if (view === 'completed') return item.type === 'plane' && Boolean(item.completedAt);
-    return item.type === 'plane' ? !item.completedAt : !hideRead || !item.read || item.id === selection.id;
-  });
+  const pending = notifications.filter(isPendingNotification);
+  const visible = notifications.filter(item => isPendingNotification(item) === (view === 'active'));
   const groups = groupNotifications(visible, selection.id);
 
   return <div className="container">
     <header className="header">
-      <h2>通知</h2>
+      <h2>提醒</h2>
       <div className="header-actions">
-        <button className="icon-btn" title="全部标为已读" aria-label="全部标为已读" disabled={Boolean(busy) || !notifications.some(item => !item.read)} onClick={() => void perform('all', () => window.api.markAllAsRead())}><CheckCheck /></button>
+        {view === 'active' ? <button className="icon-btn" title="收起全部提醒" aria-label="收起全部提醒" disabled={Boolean(busy) || !pending.length} onClick={() => void perform('all', () => window.api.setNotificationsDismissed(pending.map(item => item.id), true))}><Archive /></button> : null}
         <button className="icon-btn" title="新建通知" aria-label="新建通知" onClick={() => window.api.openNotificationSettings()}><BellPlus /></button>
         <button className="icon-btn" title="设置" aria-label="设置" onClick={() => window.api.openSettings()}><Settings /></button>
       </div>
     </header>
-    <nav className="notification-tabs" aria-label="通知视图">
+    <nav className="notification-tabs" aria-label="提醒视图">
       {([
-        ['all', '全部'], ['pending', `Plane 待处理 ${pending.length}`], ['completed', '已处理'],
+        ['active', `提醒 ${pending.length}`], ['history', '历史'],
       ] as const).map(([key, label]) => <button key={key} aria-pressed={view === key} onClick={() => { setView(key); setError(''); }}>{label}</button>)}
     </nav>
     {error ? <div className="notification-error" role="alert">{error}<button className="icon-btn" title="重试载入" aria-label="重试载入" onClick={() => { setError(''); void refresh(); }}><RotateCcw /></button></div> : null}
-    <main className="notification-list" aria-label="通知列表">
-      {!groups.length ? <div className="empty-state"><Inbox size={28} /><p>{loading ? '正在载入通知' : view === 'completed' ? '暂无已处理通知' : view === 'pending' ? '没有待处理的 Plane 通知' : '暂无通知'}</p></div> : null}
+    <main className="notification-list" aria-label="提醒列表">
+      {!groups.length ? <div className="empty-state"><Inbox size={28} /><p>{loading ? '正在载入提醒' : view === 'history' ? '暂无历史提醒' : '暂无新提醒'}</p></div> : null}
       {groups.map(group => {
         const item = group[0];
         const plane = item.type === 'plane';
@@ -136,9 +130,9 @@ function Notifications() {
           : message.text;
         const title = plane ? item.title : item.title.replace(/\s*\([^)]*\)\s*$/, '');
         const target = plane ? item.metadata?.plane?.url : item.metadata?.tmux?.target;
-        const allRead = group.every(entry => entry.read);
-        const readLabel = allRead ? '已读' : group.length > 1 ? '标记本组已读' : '标记已读';
-        return <article key={item.id} id={`notification-${item.id}`} data-notification-id={item.id} tabIndex={-1} className={`notification-item ${(!plane && allRead) || item.completedAt ? 'read' : ''} ${item.id === selection.id ? 'is-selected' : ''}`}>
+        const dismissed = !isPendingNotification(item);
+        const dismissLabel = dismissed ? '恢复提醒' : group.length > 1 ? '收起本组提醒' : '收起提醒';
+        return <article key={item.id} id={`notification-${item.id}`} data-notification-id={item.id} tabIndex={-1} className={`notification-item ${dismissed ? 'read' : ''} ${item.id === selection.id ? 'is-selected' : ''}`}>
           <div className="notification-header">
             <span className="notification-type">{plane ? 'RtiTek Plane' : 'Tmux AI agent'}{group.length > 1 ? <span className="notification-count">×{group.length}</span> : null}</span>
             <time className="notification-time" dateTime={new Date(item.timestamp).toISOString()} title={new Date(item.timestamp).toLocaleString()}>{formatTime(item.timestamp)}</time>
@@ -148,8 +142,7 @@ function Notifications() {
               <span className="notification-title">{title}{target ? <ExternalLink size={12} /> : null}</span>
             </button>
             <div className="notification-item-actions">
-              <button className="icon-btn" disabled={Boolean(busy) || allRead} title={readLabel} aria-label={`${readLabel}：${title}`} onClick={() => void perform(item.id, () => window.api.markManyAsRead(group.map(entry => entry.id)))}><MailCheck /></button>
-              {plane ? <button className="icon-btn complete-notification" disabled={Boolean(busy)} title={item.completedAt ? '恢复待处理' : '标记已处理'} aria-label={item.completedAt ? `恢复待处理：${title}` : `标记已处理：${title}`} onClick={() => void perform(item.id, () => window.api.setNotificationCompleted(item.id, !item.completedAt))}>{item.completedAt ? <RotateCcw /> : <Check />}</button> : null}
+              <button className="icon-btn" disabled={Boolean(busy)} title={dismissLabel} aria-label={`${dismissLabel}：${title}`} onClick={() => void perform(item.id, () => window.api.setNotificationsDismissed(group.map(entry => entry.id), !dismissed))}>{dismissed ? <RotateCcw /> : <Archive />}</button>
             </div>
           </div>
           {project ? <div className="notification-session-title">{project.name}{project.branch ? ` (${project.branch})` : ''}</div> : null}

@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const {
   channelFromInput, normalizePlaneNotification, planeCommentPreview, safeWebUrl,
-  isPendingNotification, retainNotifications, clearReadNotifications, setNotificationCompleted,
+  isPendingNotification, retainNotifications, clearReadNotifications, setNotificationCompleted, setNotificationsDismissed,
 } = require('../dist/main/notification-core');
 
 const channel = { id: 'plane', name: 'RtiTek Plane', type: 'plane', url: 'https://ntfy.example/plane', planeBaseUrl: 'https://plane.example' };
@@ -79,6 +79,24 @@ test('reading, clearing, retention and restart preserve every Plane event until 
   const restored = setNotificationCompleted([done], 'p', false)[0];
   assert.equal(isPendingNotification(restored), true);
   assert.equal(restored.completedAt, null);
+});
+
+test('dismissal and restore preserve reminder content and only affect the requested entries', () => {
+  const plane = { id: 'plane', type: 'plane', read: false, completedAt: null, metadata: { plane: { rawPayload: '{"event":"issue"}' } } };
+  const tmux = { id: 'tmux', read: false, message: 'tmux message' };
+  const unrelated = { ...plane, id: 'another-event-for-same-task' };
+  const items = [plane, tmux, unrelated];
+  const dismissed = setNotificationsDismissed(items, ['plane', 'tmux'], true, 123);
+  assert.equal(dismissed[0].completedAt, 123);
+  assert.equal(dismissed[0].read, true);
+  assert.equal(dismissed[1].read, true);
+  assert.deepEqual(dismissed[2], unrelated);
+  assert.equal(isPendingNotification(dismissed[0]), false);
+  assert.equal(isPendingNotification(dismissed[1]), false);
+  assert.deepEqual(setNotificationsDismissed(dismissed, ['plane', 'tmux'], true, 456), dismissed);
+  const restored = setNotificationsDismissed(JSON.parse(JSON.stringify(dismissed)), ['plane', 'tmux'], false);
+  assert.deepEqual(restored, items);
+  assert.equal(plane.read, false);
 });
 
 function loadClient(fetchImpl) {

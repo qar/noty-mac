@@ -100,7 +100,8 @@ export interface AppApi {
   markAllAsRead(): Promise<AppNotification[]>;
   clearRead(): Promise<AppNotification[]>;
   setNotificationCompleted(id: string, completed: boolean): Promise<AppNotification[]>;
-  jumpToNotificationTarget(id: string): Promise<JumpOutcome>;
+  setNotificationsDismissed(ids: string[], dismissed: boolean): Promise<AppNotification[]>;
+  jumpToNotificationTarget(id: string, options?: { notificationIds?: string[] }): Promise<JumpOutcome>;
   onNewNotification(callback: () => void): () => void;
   onWindowShown(callback: () => void): () => void;
   onNotificationSelected(callback: (id: string) => void): () => void;

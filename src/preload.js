@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('api', {
   jumpToNotificationTarget: (id, options) => ipcRenderer.invoke('jump-to-notification-target', id, options),
   clearRead: () => ipcRenderer.invoke('clear-read'),
   setNotificationCompleted: (id, completed) => ipcRenderer.invoke('set-notification-completed', id, completed),
+  setNotificationsDismissed: (ids, dismissed) => ipcRenderer.invoke('set-notifications-dismissed', ids, dismissed),
   onNotificationsUpdated: (callback) => {
     const listener = () => callback();
     ipcRenderer.on('notifications-updated', listener);

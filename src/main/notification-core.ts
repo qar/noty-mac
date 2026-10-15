@@ -166,3 +166,10 @@ export function setNotificationCompleted(items: AppNotification[], notificationI
     ? { ...item, completedAt: completed ? now : null, read: completed ? true : item.read }
     : item);
 }
+
+export function setNotificationsDismissed(items: AppNotification[], notificationIds: string[], dismissed: boolean, now = Date.now()): AppNotification[] {
+  const ids = new Set(notificationIds);
+  return items.map(item => ids.has(item.id)
+    ? { ...item, read: dismissed, ...(item.type === 'plane' ? { completedAt: dismissed ? item.completedAt ?? now : null } : {}) }
+    : item);
+}
