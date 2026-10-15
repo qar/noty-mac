@@ -6,7 +6,7 @@ const store = require('./store');
 const NtfyClient = require('./ntfy-client');
 const { channelFromInput, safeWebUrl, isPendingNotification, clearReadNotifications, setNotificationCompleted } = require('./notification-core');
 const Updater = require('./updater');
-const { toggleWindow, showWindow, getWindow } = require('./window');
+const { toggleWindow, showNotification, getSelectedNotificationId, getWindow } = require('./window');
 const { openMainWindow, hideMainWindow, getMainWindow, destroyMainWindow } = require('./main-window');
 const workspace = require('./workspace');
 const { probeTmux } = require('./tmux-probe');
@@ -403,20 +403,8 @@ app.whenReady().then(async () => {
     }
   });
 
-  ntfyClient.on('notification-clicked', async (notification) => {
-    const result = await openNotificationTarget(notification);
-
-    if (!result.success && notification.type === 'plane') {
-      showWindow(tray);
-    }
-
-    if (result.success) {
-      const window = getWindow();
-      if (window) {
-        window.webContents.send('notification-jumped', notification.id);
-      }
-    }
-  });
+  ntfyClient.on('notification-clicked', (notification) => showNotification(tray, notification.id));
+  ntfyClient.on('notification-updated', notificationsChanged);
 
   // 订阅所有频道
   ntfyClient.subscribeToAllChannels();
@@ -615,6 +603,11 @@ function openSettingsView(tab = 'general') {
 }
 
 function setupIPC() {
+  ipcMain.handle('get-selected-notification', () => getSelectedNotificationId());
+  ipcMain.handle('retry-notification-attachment', async (_event, id) => {
+    if (!ntfyClient || typeof id !== 'string') throw new Error('无法重试正文附件');
+    await ntfyClient.retryAttachment(id);
+  });
   // 获取通知列表
   ipcMain.handle('get-notifications', () => {
     return store.get('notifications');

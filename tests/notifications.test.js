@@ -86,10 +86,10 @@ function loadClient(fetchImpl) {
   const store = { get: key => structuredClone(state[key]), set: (key, value) => { state[key] = structuredClone(value); } };
   const timers = [];
   const notices = [];
-  class Notification {
+  const nativeNotifications = [];
+  class Notification extends require('node:events').EventEmitter {
     static isSupported() { return true; }
-    constructor(options) { notices.push(options); }
-    on() {}
+    constructor(options) { super(); notices.push(options); nativeNotifications.push(this); }
     show() {}
   }
   const context = {
@@ -98,10 +98,11 @@ function loadClient(fetchImpl) {
     setTimeout: callback => { const timer = { callback }; timers.push(timer); return timer; },
     clearTimeout: timer => { if (timer) timer.cleared = true; },
     require: name => name === 'electron' ? { Notification } : name === './store' ? store
-      : name === './notification-core' ? require('../dist/main/notification-core') : require(name),
+      : name === './notification-core' ? require('../dist/main/notification-core')
+      : name === './plane-attachment' ? require('../dist/main/plane-attachment') : require(name),
   };
   vm.runInNewContext(fs.readFileSync(require.resolve('../dist/main/ntfy-client'), 'utf8'), context);
-  return { client: new context.module.exports(), state, timers, notices };
+  return { client: new context.module.exports(), state, timers, notices, nativeNotifications };
 }
 
 test('ntfy delivery deduplicates per subscription without coalescing events for the same task', () => {
@@ -142,4 +143,91 @@ test('ntfy stream reconstructs split UTF-8 JSON, processes final lines and recon
   assert.equal(timers[0].cleared, true);
   timers[0].callback();
   assert.equal(client.connections.size, 0);
+});
+
+test('Plane JSON attachments are read and persisted instead of the ntfy file placeholder', async () => {
+  const raw = JSON.stringify({ event: 'issue_comment', action: 'created',
+    data: { id: 'comment', issue: 'task', project: 'project', comment_html: '<p>Test comment</p>' },
+    activity: { field: null, actor: { display_name: 'Tester' } },
+  });
+  const envelope = { event: 'message', id: 'attachment-event', message: 'You received a file: attachment.json',
+    attachment: { url: 'https://ntfy.example/file/fixture.json', name: 'attachment.json', size: Buffer.byteLength(raw) },
+  };
+  const { client, state } = loadClient(async url => new Response(url.includes('/file/') ? raw : JSON.stringify(envelope) + '\n'));
+  await client.startSSEConnection({ ...channel, planeWorkspaceSlug: 'rtitek' });
+  assert.equal(state.notifications[0].metadata.plane.rawPayload, raw);
+  assert.equal(state.notifications[0].metadata.plane.url, 'https://plane.example/rtitek/projects/project/issues/task');
+  assert.equal(state.notifications[0].read, false);
+});
+
+test('comment payloads without a workspace slug retain their complete body and use configured workspace', () => {
+  const raw = fs.readFileSync(require.resolve('./fixtures/plane-comment.json'), 'utf8');
+  const withoutWorkspace = normalizePlaneNotification(channel, raw);
+  assert.equal(withoutWorkspace.metadata.plane.url, null);
+  assert.equal(withoutWorkspace.metadata.plane.rawPayload, raw);
+  const withWorkspace = normalizePlaneNotification({ ...channel, planeWorkspaceSlug: 'company' }, raw);
+  assert.equal(withWorkspace.metadata.plane.url, 'https://plane.example/company/projects/55555555-5555-4555-8555-555555555555/issues/77777777-7777-4777-8777-777777777777');
+  assert.equal(JSON.parse(withWorkspace.metadata.plane.rawPayload).data.comment_html, '<p>测试评论</p><p>Raw comment content.</p>');
+});
+
+test('expired attachments remain pending and retry repairs the same local item without new alerts', async () => {
+  let expired = true;
+  const raw = JSON.stringify(require('./fixtures/plane-comment.json'));
+  const { client, state, notices } = loadClient(async () => expired ? new Response('', { status: 410 }) : new Response(raw));
+  state.channels.push(channel);
+  await client.receiveNotification(channel, { id: 'retry', message: 'You received a file: attachment.json',
+    attachment: { url: 'https://ntfy.example/file/comment.json', name: 'attachment.json' },
+  });
+  const saved = state.notifications[0];
+  assert.equal(saved.read, false);
+  assert.equal(saved.completedAt, null);
+  assert.equal(saved.metadata.plane.attachment.status, 'error');
+  assert.match(saved.metadata.plane.attachment.error, /过期/);
+  saved.read = true;
+  saved.completedAt = 123;
+  expired = false;
+  await client.retryAttachment(saved.id);
+  assert.equal(state.notifications.length, 1);
+  assert.equal(state.notifications[0].id, saved.id);
+  assert.equal(state.notifications[0].read, true);
+  assert.equal(state.notifications[0].completedAt, 123);
+  assert.equal(state.notifications[0].metadata.plane.rawPayload, raw);
+  assert.equal(state.notifications[0].metadata.plane.attachment.status, 'loaded');
+  assert.equal(notices.length, 1);
+});
+
+test('cached historical attachment messages are backfilled without duplicating or acknowledging them', async () => {
+  const raw = JSON.stringify(require('./fixtures/plane-comment.json'));
+  const envelope = { event: 'message', id: 'old-file', message: 'You received a file: attachment.json',
+    attachment: { url: 'https://ntfy.example/file/old.json', name: 'attachment.json' },
+  };
+  const requests = [];
+  const { client, state, notices } = loadClient(async url => {
+    requests.push(url);
+    return new Response(url.includes('/file/') ? raw : JSON.stringify(envelope) + '\n');
+  });
+  state.notifications.push({ id: 'local-id', ntfyId: 'old-file', channelId: channel.id, type: 'plane',
+    read: false, completedAt: null, timestamp: Date.now(), metadata: { plane: { parseError: 'invalid JSON' } },
+  });
+  await client.startSSEConnection(channel);
+  assert.match(requests[0], /since=all/);
+  assert.equal(state.notifications.length, 1);
+  assert.equal(state.notifications[0].id, 'local-id');
+  assert.equal(state.notifications[0].read, false);
+  assert.equal(state.notifications[0].metadata.plane.rawPayload, raw);
+  assert.equal(notices.length, 0);
+});
+
+test('native notification callbacks stay alive until close and clicks do not acknowledge content', () => {
+  const { client, state, nativeNotifications } = loadClient();
+  let clicked;
+  client.on('notification-clicked', item => { clicked = item.id; });
+  client.handleNotification(channel, { id: 'native', message: JSON.stringify(payload) });
+  const saved = structuredClone(state.notifications);
+  assert.equal(client.systemNotifications.size, 1);
+  nativeNotifications[0].emit('click');
+  assert.equal(clicked, saved[0].id);
+  assert.deepEqual(state.notifications, saved);
+  nativeNotifications[0].emit('close');
+  assert.equal(client.systemNotifications.size, 0);
 });

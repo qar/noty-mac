@@ -93,6 +93,8 @@ export interface AppApi {
   addChannel(name: string, url: string, options?: ChannelOptions): Promise<Channel[]>;
   removeChannel(id: string): Promise<Channel[]>;
   getNotifications(): Promise<AppNotification[]>;
+  getSelectedNotification(): Promise<string | null>;
+  retryNotificationAttachment(id: string): Promise<void>;
   markAsRead(id: string): Promise<AppNotification[]>;
   markManyAsRead(ids: string[]): Promise<AppNotification[]>;
   markAllAsRead(): Promise<AppNotification[]>;
@@ -101,7 +103,7 @@ export interface AppApi {
   jumpToNotificationTarget(id: string): Promise<JumpOutcome>;
   onNewNotification(callback: () => void): () => void;
   onWindowShown(callback: () => void): () => void;
-  onNotificationJumped(callback: (id: string) => void): () => void;
+  onNotificationSelected(callback: (id: string) => void): () => void;
   onNotificationsUpdated(callback: () => void): () => void;
   getSettings(): Promise<AppPreferences>;
   updateSettings(settings: AppPreferences): Promise<AppPreferences>;

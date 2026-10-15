@@ -16,6 +16,14 @@ export interface Channel extends ChannelOptions {
 }
 
 export interface PlaneEvent {
+  attachment?: {
+    url: string;
+    name: string;
+    size?: number;
+    status: 'loaded' | 'error';
+    error?: string;
+  };
+  sourceClick?: string;
   deliveryId: string;
   event: string;
   action: string;

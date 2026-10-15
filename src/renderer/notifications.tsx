@@ -6,12 +6,13 @@ import './renderer-api';
 
 type View = 'all' | 'pending' | 'completed';
 
-function groupNotifications(items: AppNotification[]): AppNotification[][] {
+function groupNotifications(items: AppNotification[], selectedId: string | null): AppNotification[][] {
   const groups: AppNotification[][] = [];
   for (const item of items) {
     const previous = groups[groups.length - 1];
-    const target = item.type !== 'plane' && item.metadata?.tmux?.target;
+    const target = item.id !== selectedId && item.type !== 'plane' && item.metadata?.tmux?.target;
     if (target && previous?.[0].type !== 'plane' && previous?.[0].channelId === item.channelId
+      && previous?.[0].id !== selectedId
       && previous?.[0].metadata?.tmux?.target === target) previous.push(item);
     else groups.push([item]);
   }
@@ -26,6 +27,7 @@ function Notifications() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [selection, setSelection] = useState<{ id: string | null; version: number }>({ id: null, version: 0 });
 
   const refresh = useCallback(async () => {
     try {
@@ -35,6 +37,7 @@ function Notifications() {
       setNotifications(items);
       setChannels(sources);
       setHideRead(settings.hideRead);
+      return items;
     } catch {
       setError('无法载入通知，请重试');
     } finally {
@@ -43,15 +46,31 @@ function Notifications() {
   }, []);
 
   useEffect(() => {
-    void refresh();
+    let active = true;
+    const select = async (id: string | null) => {
+      const items = await refresh();
+      if (!active || !id) return;
+      const item = items?.find(entry => entry.id === id);
+      if (!item) return;
+      setView(item.type === 'plane' ? item.completedAt ? 'completed' : 'pending' : 'all');
+      setSelection(previous => ({ id, version: previous.version + 1 }));
+    };
     const off = [
       window.api.onNewNotification(() => void refresh()),
       window.api.onWindowShown(() => void refresh()),
-      window.api.onNotificationJumped(() => void refresh()),
+      window.api.onNotificationSelected(id => void select(id)),
       window.api.onNotificationsUpdated(() => void refresh()),
     ];
-    return () => off.forEach(unsubscribe => unsubscribe());
+    window.api.getSelectedNotification().then(select).catch(() => void refresh());
+    return () => { active = false; off.forEach(unsubscribe => unsubscribe()); };
   }, [refresh]);
+
+  useEffect(() => {
+    if (!selection.id) return;
+    const item = document.getElementById(`notification-${selection.id}`);
+    item?.scrollIntoView({ block: 'start' });
+    item?.focus({ preventScroll: true });
+  }, [selection]);
 
   const perform = async (id: string, operation: () => Promise<unknown>) => {
     if (busy) return;
@@ -83,9 +102,9 @@ function Notifications() {
   const visible = notifications.filter(item => {
     if (view === 'pending') return item.type === 'plane' && !item.completedAt;
     if (view === 'completed') return item.type === 'plane' && Boolean(item.completedAt);
-    return item.type === 'plane' ? !item.completedAt : !hideRead || !item.read;
+    return item.type === 'plane' ? !item.completedAt : !hideRead || !item.read || item.id === selection.id;
   });
-  const groups = groupNotifications(visible);
+  const groups = groupNotifications(visible, selection.id);
 
   return <div className="container">
     <header className="header">
@@ -114,7 +133,7 @@ function Notifications() {
         const target = plane ? item.metadata?.plane?.url : item.metadata?.tmux?.target;
         const allRead = group.every(entry => entry.read);
         const readLabel = allRead ? '已读' : group.length > 1 ? '标记本组已读' : '标记已读';
-        return <article key={item.id} className={`notification-item ${(!plane && allRead) || item.completedAt ? 'read' : ''}`}>
+        return <article key={item.id} id={`notification-${item.id}`} data-notification-id={item.id} tabIndex={-1} className={`notification-item ${(!plane && allRead) || item.completedAt ? 'read' : ''} ${item.id === selection.id ? 'is-selected' : ''}`}>
           <div className="notification-header">
             <span className="notification-type">{plane ? 'RtiTek Plane' : 'Tmux AI agent'}{group.length > 1 ? <span className="notification-count">×{group.length}</span> : null}</span>
             <time className="notification-time" dateTime={new Date(item.timestamp).toISOString()} title={new Date(item.timestamp).toLocaleString()}>{formatTime(item.timestamp)}</time>
@@ -129,6 +148,10 @@ function Notifications() {
             </div>
           </div>
           {project ? <div className="notification-session-title">{project.name}{project.branch ? ` (${project.branch})` : ''}</div> : null}
+          {item.metadata?.plane?.attachment?.status === 'error' ? <div className="notification-error" role="status">
+            {item.metadata.plane.attachment.error}
+            <button className="icon-btn" title="重试读取正文" aria-label={`重试读取正文：${title}`} disabled={Boolean(busy)} onClick={() => void perform(item.id, () => window.api.retryNotificationAttachment(item.id))}><RotateCcw /></button>
+          </div> : null}
           <pre className="notification-message">{message}</pre>
           <div className="notification-bottom">
             <span className="notification-channel">{source?.name || '已移除的通知来源'}</span>

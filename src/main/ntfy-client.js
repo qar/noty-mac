@@ -3,6 +3,12 @@ const { Notification, safeStorage } = require('electron');
 const store = require('./store');
 const crypto = require('crypto');
 const { normalizePlaneNotification, retainNotifications } = require('./notification-core');
+const { readPlaneAttachment } = require('./plane-attachment');
+
+function accessToken(channel) {
+  return channel.encryptedAccessToken
+    ? safeStorage.decryptString(Buffer.from(channel.encryptedAccessToken, 'base64')) : '';
+}
 
 function generateId() {
   return crypto.randomBytes(16).toString('hex');
@@ -136,6 +142,7 @@ class NtfyClient extends EventEmitter {
     super();
     this.connections = new Map(); // channelId -> EventSource
     this.reconnectTimers = new Map();
+    this.systemNotifications = new Map();
   }
 
   subscribeToChannel(channel) {
@@ -154,14 +161,14 @@ class NtfyClient extends EventEmitter {
   async startSSEConnection(channel) {
     const notifications = store.get('notifications');
     const channelNotifications = notifications.filter(n => n.channelId === channel.id);
-    const lastTimestamp = channelNotifications.length > 0
-      ? Math.max(...channelNotifications.map(n => n.timestamp))
-      : 0;
+    const lastTimestamp = channelNotifications.reduce((latest, item) => Math.max(latest, item.timestamp), 0);
 
     const sinceTimestamp = lastTimestamp >= 1e12
       ? Math.floor(lastTimestamp / 1000)
       : lastTimestamp;
-    const sinceParam = sinceTimestamp > 0 ? `since=${sinceTimestamp}` : 'since=all';
+    const needsRecovery = channel.type === 'plane' && channelNotifications.some(item =>
+      item.metadata?.plane?.parseError || item.metadata?.plane?.attachment?.status === 'error');
+    const sinceParam = sinceTimestamp > 0 && !needsRecovery ? `since=${sinceTimestamp}` : 'since=all';
     const url = `${channel.url.replace(/\/+$/, '')}/json?${sinceParam}`;
 
     const controller = new AbortController();
@@ -170,7 +177,7 @@ class NtfyClient extends EventEmitter {
     try {
       const headers = {};
       if (channel.encryptedAccessToken) {
-        headers.Authorization = `Bearer ${safeStorage.decryptString(Buffer.from(channel.encryptedAccessToken, 'base64'))}`;
+        headers.Authorization = `Bearer ${accessToken(channel)}`;
       }
       const response = await fetch(url, {
         method: 'GET',
@@ -182,7 +189,7 @@ class NtfyClient extends EventEmitter {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let pending = '';
-      const consume = (line) => {
+      const consume = async (line) => {
         if (!line.trim() || controller.signal.aborted) return;
         let data;
         try {
@@ -191,7 +198,7 @@ class NtfyClient extends EventEmitter {
           console.warn(`Invalid ntfy JSON for ${channel.name}`);
           return;
         }
-        if (data.event === 'message') this.handleNotification(channel, data);
+        if (data.event === 'message') await this.receiveNotification(channel, data, controller.signal);
       };
 
       try {
@@ -199,13 +206,13 @@ class NtfyClient extends EventEmitter {
           const { done, value } = await reader.read();
           if (done) {
             pending += decoder.decode();
-            consume(pending);
+            await consume(pending);
             break;
           }
           pending += decoder.decode(value, { stream: true });
           const lines = pending.split('\n');
           pending = lines.pop();
-          lines.forEach(consume);
+          for (const line of lines) await consume(line);
         }
       } finally {
         await reader.cancel().catch(() => {});
@@ -229,11 +236,48 @@ class NtfyClient extends EventEmitter {
     }
   }
 
-  handleNotification(channel, data) {
+  async receiveNotification(channel, data, signal) {
+    if (channel.type !== 'plane' || !data.attachment?.url) return this.handleNotification(channel, data);
+    const existing = store.get('notifications').find(item => item.channelId === channel.id && item.ntfyId === data.id);
+    if (existing?.metadata?.plane?.attachment?.status === 'loaded') return;
+    const attachment = {
+      url: data.attachment.url,
+      name: data.attachment.name || 'attachment.json',
+      ...(typeof data.attachment.size === 'number' ? { size: data.attachment.size } : {}),
+      status: 'loaded',
+    };
+    let received = data;
+    try {
+      const message = await readPlaneAttachment(channel.url, attachment, { token: accessToken(channel), signal, fetchImpl: fetch });
+      received = { ...data, message };
+    } catch (error) {
+      attachment.status = 'error';
+      attachment.error = error.name === 'AbortError'
+        ? '正文附件读取超时或中断，请重试' : error.message;
+    }
+    this.handleNotification(channel, received, attachment);
+  }
+
+  async retryAttachment(id) {
+    const item = store.get('notifications').find(notification => notification.id === id);
+    const attachment = item?.metadata?.plane?.attachment;
+    if (!attachment || !item.ntfyId) throw new Error('没有可重试的正文附件');
+    const channel = store.get('channels').find(source => source.id === item.channelId);
+    if (!channel) throw new Error('通知来源已移除，无法重试附件');
+    await this.receiveNotification(channel, {
+      id: item.ntfyId, time: item.timestamp,
+      message: item.metadata.plane.rawPayload,
+      click: item.metadata.plane.sourceClick,
+      attachment,
+    });
+  }
+
+  handleNotification(channel, data, attachment) {
     const notifications = store.get('notifications');
 
     // 去重：ntfy 消息 ID 已存在则跳过
-    if (data.id && notifications.some(n => n.channelId === channel.id && n.ntfyId === data.id)) {
+    const existing = data.id && notifications.find(n => n.channelId === channel.id && n.ntfyId === data.id);
+    if (existing && (!attachment || existing.metadata?.plane?.attachment?.status === 'loaded')) {
       return;
     }
 
@@ -245,8 +289,25 @@ class NtfyClient extends EventEmitter {
       ? normalizePlaneNotification(channel, data.message || '', data.click)
       : null;
     const metadata = plane?.metadata || normalizeNotificationMetadata(data);
+    if (plane && attachment) {
+      metadata.plane.attachment = attachment;
+      if (typeof data.click === 'string') metadata.plane.sourceClick = data.click;
+      if (attachment.status === 'error') {
+        plane.title = 'RtiTek Plane · 正文未载入';
+        plane.message = attachment.error;
+        delete metadata.plane.parseError;
+      }
+    }
     if (plane?.metadata.plane.deliveryId && notifications.some(n => n.channelId === channel.id
-      && n.metadata?.plane?.deliveryId === plane.metadata.plane.deliveryId)) return;
+      && n.id !== existing?.id && n.metadata?.plane?.deliveryId === plane.metadata.plane.deliveryId)) return;
+
+    // Repairs keep the local identity and explicit acknowledgement/completion.
+    if (existing) {
+      Object.assign(existing, { title: plane.title, message: plane.message, metadata });
+      store.set('notifications', notifications);
+      this.emit('notification-updated', existing);
+      return;
+    }
 
     const notification = {
       id: generateId(),
@@ -275,7 +336,9 @@ class NtfyClient extends EventEmitter {
     const projectLabel = project
       ? (project.branch ? `${project.name} (${project.branch})` : project.name)
       : null;
-    const cleanBody = plane ? notification.message : notification.message
+    const cleanBody = plane
+      ? (metadata.plane.attachment?.error || metadata.plane.rawPayload).slice(0, 1000)
+      : notification.message
       .split('\n')
       .filter(line => !/^\s*(?:🖥\s*)?tmux\s*:/i.test(line) && !/^\s*📂\s/.test(line))
       .join('\n')
@@ -292,6 +355,8 @@ class NtfyClient extends EventEmitter {
     systemNotification.on('click', () => {
       this.emit('notification-clicked', notification);
     });
+    systemNotification.on('close', () => this.systemNotifications.delete(notification.id));
+    this.systemNotifications.set(notification.id, systemNotification);
 
     systemNotification.show();
 

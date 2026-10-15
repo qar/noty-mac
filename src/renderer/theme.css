@@ -215,6 +215,7 @@ input {
 .notification-tabs button { border: 0; border-bottom: 2px solid transparent; background: none; color: var(--legacy-muted); padding: 12px 8px; cursor: pointer; font-size: 12px; }
 .notification-tabs button[aria-pressed="true"] { color: var(--legacy-accent); border-bottom-color: var(--legacy-accent); }
 .notification-item { cursor: default; }
+.notification-item.is-selected { box-shadow: inset 3px 0 var(--legacy-accent); background: var(--legacy-raised); }
 .notification-heading { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
 .notification-heading .notification-open { flex: 1; min-width: 0; }
 .notification-item-actions { display: flex; flex-shrink: 0; gap: 4px; }

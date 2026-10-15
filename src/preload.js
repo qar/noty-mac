@@ -4,6 +4,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   // 通知相关
   getNotifications: () => ipcRenderer.invoke('get-notifications'),
+  getSelectedNotification: () => ipcRenderer.invoke('get-selected-notification'),
+  retryNotificationAttachment: (id) => ipcRenderer.invoke('retry-notification-attachment', id),
   markAsRead: (id) => ipcRenderer.invoke('mark-as-read', id),
   markManyAsRead: (ids) => ipcRenderer.invoke('mark-many-as-read', ids),
   markAllAsRead: () => ipcRenderer.invoke('mark-all-as-read'),
@@ -52,10 +54,10 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('window-shown', listener);
   },
 
-  onNotificationJumped: (callback) => {
+  onNotificationSelected: (callback) => {
     const listener = (event, id) => callback(id);
-    ipcRenderer.on('notification-jumped', listener);
-    return () => ipcRenderer.removeListener('notification-jumped', listener);
+    ipcRenderer.on('notification-selected', listener);
+    return () => ipcRenderer.removeListener('notification-selected', listener);
   },
 
   // 更新相关

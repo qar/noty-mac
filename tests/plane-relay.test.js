@@ -14,20 +14,18 @@ test('relay verifies exact raw bytes before parsing and rejects missing or incor
   assert.equal(await verifyPlaneSignature('wrong', body, signature), false);
 });
 
-test('large Plane events remain ntfy text messages and retain task identity and filtering fields', async () => {
-  const { compactPlanePayload } = await import('../scripts/plane-ntfy-relay.mjs');
-  const payload = {
-    event: 'issue_comment', action: 'created', workspace_slug: 'rtitek',
-    data: { id: 'comment', issue: 'task', project: 'project', name: '中'.repeat(5000), description_html: 'x'.repeat(10000) },
-    activity: { field: 'comment', new_value: '中'.repeat(10000), actor: { id: 'actor', display_name: 'Anran' } },
-  };
-  const body = compactPlanePayload(payload, 'delivery');
-  assert.ok(Buffer.byteLength(body) <= 4096);
-  const compact = JSON.parse(body);
-  assert.equal(compact.data.issue, 'task');
-  assert.equal(compact.delivery_id, 'delivery');
-  assert.equal(compact.activity.field, 'comment');
-  assert.equal(compact.data.description_html, undefined);
+test('relay forwards signed raw bytes intact for small and oversized comment payloads', async t => {
+  const { default: worker } = await import('../scripts/plane-ntfy-relay.mjs');
+  const fixture = require('./fixtures/plane-comment.json');
+  const env = { PLANE_WEBHOOK_SECRET: 'test-secret', TARGET_WEBHOOK_URL: 'https://ntfy.example/topic', TARGET_BEARER_TOKEN: 'test-token' };
+  let sent;
+  t.mock.method(globalThis, 'fetch', async (_url, options) => { sent = Buffer.from(options.body); return new Response('{}'); });
+  for (const body of [JSON.stringify(fixture, null, 2), JSON.stringify({ ...fixture, data: { ...fixture.data, comment_html: '<p>' + '内容'.repeat(5000) + '</p>' } })]) {
+    const signature = createHmac('sha256', env.PLANE_WEBHOOK_SECRET).update(body).digest('hex');
+    const result = await worker.fetch(new Request('https://worker.example', { method: 'POST', body, headers: { 'X-Plane-Signature': signature } }), env);
+    assert.equal(result.status, 200);
+    assert.equal(sent.toString(), body);
+  }
 });
 
 test('relay returns upstream failure status and never forwards an invalid signature', async t => {
