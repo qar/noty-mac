@@ -131,6 +131,9 @@ function Notifications() {
         const project = item.metadata?.project;
         const message = formatMessage(item);
         const comment = plane ? planeCommentPreview(item.metadata?.plane?.rawPayload ?? item.message) : null;
+        const body = plane
+          ? comment ?? item.metadata?.plane?.parseError ?? item.message
+          : message.text;
         const title = plane ? item.title : item.title.replace(/\s*\([^)]*\)\s*$/, '');
         const target = plane ? item.metadata?.plane?.url : item.metadata?.tmux?.target;
         const allRead = group.every(entry => entry.read);
@@ -154,10 +157,10 @@ function Notifications() {
             {item.metadata.plane.attachment.error}
             <button className="icon-btn" title="重试读取正文" aria-label={`重试读取正文：${title}`} disabled={Boolean(busy)} onClick={() => void perform(item.id, () => window.api.retryNotificationAttachment(item.id))}><RotateCcw /></button>
           </div> : null}
-          <pre className="notification-message">{comment ?? message}</pre>
-          {comment ? <details className="notification-raw">
-            <summary>原始 JSON</summary>
-            <pre className="notification-message">{message}</pre>
+          {item.metadata?.plane?.attachment?.status !== 'error' ? <pre className="notification-message">{body}</pre> : null}
+          {plane ? <details className="notification-raw">
+            <summary>{message.isJson ? '原始 JSON' : '原始内容'}</summary>
+            <pre className="notification-message">{message.text}</pre>
           </details> : null}
           <div className="notification-bottom">
             <span className="notification-channel">{source?.name || '已移除的通知来源'}</span>
@@ -169,12 +172,12 @@ function Notifications() {
   </div>;
 }
 
-function formatMessage(item: AppNotification): string {
+function formatMessage(item: AppNotification): { text: string; isJson: boolean } {
   const raw = item.metadata?.plane?.rawPayload ?? item.message;
   try {
-    return JSON.stringify(JSON.parse(raw), null, 2);
+    return { text: JSON.stringify(JSON.parse(raw), null, 2), isJson: true };
   } catch {
-    return raw;
+    return { text: raw, isJson: false };
   }
 }
 
