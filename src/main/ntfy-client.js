@@ -2,7 +2,7 @@ const { EventEmitter } = require('events');
 const { Notification, safeStorage } = require('electron');
 const store = require('./store');
 const crypto = require('crypto');
-const { normalizePlaneNotification, retainNotifications } = require('./notification-core');
+const { normalizePlaneNotification, retainNotifications, planeCommentPreview } = require('./notification-core');
 const { readPlaneAttachment } = require('./plane-attachment');
 
 function accessToken(channel) {
@@ -337,7 +337,7 @@ class NtfyClient extends EventEmitter {
       ? (project.branch ? `${project.name} (${project.branch})` : project.name)
       : null;
     const cleanBody = plane
-      ? (metadata.plane.attachment?.error || metadata.plane.rawPayload).slice(0, 1000)
+      ? (metadata.plane.attachment?.error || planeCommentPreview(metadata.plane.rawPayload) || metadata.plane.rawPayload.slice(0, 1000))
       : notification.message
       .split('\n')
       .filter(line => !/^\s*(?:🖥\s*)?tmux\s*:/i.test(line) && !/^\s*📂\s/.test(line))

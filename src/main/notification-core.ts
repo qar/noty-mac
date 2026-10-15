@@ -1,4 +1,32 @@
+import { compile } from 'html-to-text';
 import type { AppNotification, Channel, ChannelOptions, PlaneEvent } from './notification-types';
+
+const commentToText = compile({
+  wordwrap: false,
+  selectors: [
+    { selector: 'a', options: { ignoreHref: true } },
+    { selector: 'img', format: 'skip' },
+  ],
+});
+const commentCharacters = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+export function planeCommentPreview(rawPayload: string): string | null {
+  let payload: Record<string, unknown>;
+  try { payload = record(JSON.parse(rawPayload)); } catch { return null; }
+  if (payload.event !== 'issue_comment') return null;
+  const data = record(payload.data);
+  const content = (text(data.comment_stripped) || commentToText(text(data.comment_html)))
+    .replace(/\s+/gu, ' ').trim();
+  if (!content) return null;
+  let preview = '';
+  let count = 0;
+  for (const { segment } of commentCharacters.segment(content)) {
+    if (count === 200) return `${preview}…`;
+    preview += segment;
+    count++;
+  }
+  return preview;
+}
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)

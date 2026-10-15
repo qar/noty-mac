@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BellPlus, Check, CheckCheck, ExternalLink, Inbox, MailCheck, RotateCcw, Settings } from 'lucide-react';
 import type { AppNotification, Channel } from '../main/notification-types';
+import { planeCommentPreview } from '../main/notification-core';
 import './renderer-api';
 
 type View = 'all' | 'pending' | 'completed';
@@ -129,6 +130,7 @@ function Notifications() {
         const source = channels.find(channel => channel.id === item.channelId);
         const project = item.metadata?.project;
         const message = formatMessage(item);
+        const comment = plane ? planeCommentPreview(item.metadata?.plane?.rawPayload ?? item.message) : null;
         const title = plane ? item.title : item.title.replace(/\s*\([^)]*\)\s*$/, '');
         const target = plane ? item.metadata?.plane?.url : item.metadata?.tmux?.target;
         const allRead = group.every(entry => entry.read);
@@ -152,7 +154,11 @@ function Notifications() {
             {item.metadata.plane.attachment.error}
             <button className="icon-btn" title="重试读取正文" aria-label={`重试读取正文：${title}`} disabled={Boolean(busy)} onClick={() => void perform(item.id, () => window.api.retryNotificationAttachment(item.id))}><RotateCcw /></button>
           </div> : null}
-          <pre className="notification-message">{message}</pre>
+          <pre className="notification-message">{comment ?? message}</pre>
+          {comment ? <details className="notification-raw">
+            <summary>原始 JSON</summary>
+            <pre className="notification-message">{message}</pre>
+          </details> : null}
           <div className="notification-bottom">
             <span className="notification-channel">{source?.name || '已移除的通知来源'}</span>
           </div>

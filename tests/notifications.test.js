@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const {
-  channelFromInput, normalizePlaneNotification, safeWebUrl,
+  channelFromInput, normalizePlaneNotification, planeCommentPreview, safeWebUrl,
   isPendingNotification, retainNotifications, clearReadNotifications, setNotificationCompleted,
 } = require('../dist/main/notification-core');
 
@@ -168,6 +168,35 @@ test('comment payloads without a workspace slug retain their complete body and u
   const withWorkspace = normalizePlaneNotification({ ...channel, planeWorkspaceSlug: 'company' }, raw);
   assert.equal(withWorkspace.metadata.plane.url, 'https://plane.example/company/projects/55555555-5555-4555-8555-555555555555/issues/77777777-7777-4777-8777-777777777777');
   assert.equal(JSON.parse(withWorkspace.metadata.plane.rawPayload).data.comment_html, '<p>测试评论</p><p>Raw comment content.</p>');
+});
+
+test('comment previews extract readable HTML text and preserve complete raw payloads in native notifications', () => {
+  const raw = JSON.stringify({ event: 'issue_comment', action: 'created', data: {
+    comment_html: '<p>修复 <strong>App</strong> &amp; Web</p><p>详情<br><a href="https://example.com">查看任务</a></p><script>alert(1)</script><style>p{color:red}</style><img src="https://example.com/track" onerror="alert(1)">',
+  } });
+  const expected = '修复 App & Web 详情 查看任务';
+  assert.equal(planeCommentPreview(raw), expected);
+  const { client, state, notices } = loadClient();
+  client.handleNotification(channel, { id: 'comment-preview', message: raw });
+  assert.equal(notices[0].body, expected);
+  assert.equal(state.notifications[0].metadata.plane.rawPayload, raw);
+  assert.equal(state.notifications[0].read, false);
+  assert.equal(state.notifications[0].completedAt, null);
+});
+
+test('comment previews truncate at 200 user-visible characters without splitting Unicode sequences', () => {
+  const prefix = '中'.repeat(198) + 'e\u0301' + '\u{1F469}\u200D\u{1F4BB}';
+  for (const suffix of ['', '多余内容']) {
+    const raw = JSON.stringify({ event: 'issue_comment', data: { comment_stripped: prefix + suffix, comment_html: '<p>Fallback</p>' } });
+    assert.equal(planeCommentPreview(raw), prefix + (suffix ? '…' : ''));
+  }
+  const longUnicode = '\u{1F469}\u200D\u{1F4BB}'.repeat(201);
+  const { client, notices } = loadClient();
+  client.handleNotification(channel, { id: 'unicode-preview', message: JSON.stringify({ event: 'issue_comment', data: { comment_stripped: longUnicode } }) });
+  assert.equal(notices[0].body, '\u{1F469}\u200D\u{1F4BB}'.repeat(200) + '…');
+  for (const raw of ['invalid', 'null', '{}', JSON.stringify({ event: 'issue', data: { comment_stripped: 'Not a comment event' } }), JSON.stringify({ event: 'issue_comment', data: { comment_html: '<p><br></p>' } })]) {
+    assert.equal(planeCommentPreview(raw), null);
+  }
 });
 
 test('expired attachments remain pending and retry repairs the same local item without new alerts', async () => {
