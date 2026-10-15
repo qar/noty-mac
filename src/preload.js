@@ -9,10 +9,16 @@ contextBridge.exposeInMainWorld('api', {
   markAllAsRead: () => ipcRenderer.invoke('mark-all-as-read'),
   jumpToNotificationTarget: (id, options) => ipcRenderer.invoke('jump-to-notification-target', id, options),
   clearRead: () => ipcRenderer.invoke('clear-read'),
+  setNotificationCompleted: (id, completed) => ipcRenderer.invoke('set-notification-completed', id, completed),
+  onNotificationsUpdated: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('notifications-updated', listener);
+    return () => ipcRenderer.removeListener('notifications-updated', listener);
+  },
 
   // 频道相关
   getChannels: () => ipcRenderer.invoke('get-channels'),
-  addChannel: (name, url) => ipcRenderer.invoke('add-channel', name, url),
+  addChannel: (name, url, options) => ipcRenderer.invoke('add-channel', name, url, options),
   removeChannel: (id) => ipcRenderer.invoke('remove-channel', id),
 
   // 设置相关
@@ -30,19 +36,26 @@ contextBridge.exposeInMainWorld('api', {
   // 窗口控制
   closeWindow: () => ipcRenderer.send('close-window'),
   openSettings: () => ipcRenderer.send('open-settings'),
+  openNotificationSettings: () => ipcRenderer.send('open-notification-settings'),
 
   // 监听新通知
   onNewNotification: (callback) => {
-    ipcRenderer.on('new-notification', (event, notification) => callback(notification));
+    const listener = (event, notification) => callback(notification);
+    ipcRenderer.on('new-notification', listener);
+    return () => ipcRenderer.removeListener('new-notification', listener);
   },
 
   // 监听窗口显示事件
   onWindowShown: (callback) => {
-    ipcRenderer.on('window-shown', () => callback());
+    const listener = () => callback();
+    ipcRenderer.on('window-shown', listener);
+    return () => ipcRenderer.removeListener('window-shown', listener);
   },
 
   onNotificationJumped: (callback) => {
-    ipcRenderer.on('notification-jumped', (event, id) => callback(id));
+    const listener = (event, id) => callback(id);
+    ipcRenderer.on('notification-jumped', listener);
+    return () => ipcRenderer.removeListener('notification-jumped', listener);
   },
 
   // 更新相关
@@ -58,9 +71,10 @@ contextBridge.exposeInMainWorld('api', {
 
   dashboard: {
     getInitialView: () => ipcRenderer.invoke('dashboard:get-initial-view'),
+    getSettingsTab: () => ipcRenderer.invoke('dashboard:get-settings-tab'),
     setView: (view) => ipcRenderer.send('dashboard:set-view', view),
     onNavigate: (callback) => {
-      const listener = (event, view) => callback(view);
+      const listener = (event, view, settingsTab) => callback(view, settingsTab);
       ipcRenderer.on('dashboard:navigate', listener);
       return () => ipcRenderer.removeListener('dashboard:navigate', listener);
     }

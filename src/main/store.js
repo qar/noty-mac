@@ -9,7 +9,11 @@ const schema = {
       properties: {
         id: { type: 'string' },
         name: { type: 'string' },
-        url: { type: 'string' }
+        url: { type: 'string' },
+        type: { type: 'string', enum: ['tmux-agent', 'plane'] },
+        planeBaseUrl: { type: 'string' },
+        planeWorkspaceSlug: { type: 'string' },
+        encryptedAccessToken: { type: 'string' }
       },
       required: ['id', 'name', 'url']
     }
@@ -21,7 +25,9 @@ const schema = {
       type: 'object',
       properties: {
         id: { type: 'string' },
-        ntfyId: { type: 'string' },
+        ntfyId: { type: ['string', 'null'] },
+        type: { type: 'string', enum: ['tmux-agent', 'plane'] },
+        completedAt: { type: ['number', 'null'] },
         channelId: { type: 'string' },
         title: { type: 'string' },
         message: { type: 'string' },

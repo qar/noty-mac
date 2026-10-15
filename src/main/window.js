@@ -22,7 +22,7 @@ function createWindow(tray) {
     }
   });
 
-  mainWindow.loadFile(path.join(app.getAppPath(), 'src/renderer/index.html'));
+  mainWindow.loadFile(path.join(app.getAppPath(), 'dist/renderer/index.html'));
 
   // 窗口失焦时隐藏
   mainWindow.on('blur', () => {

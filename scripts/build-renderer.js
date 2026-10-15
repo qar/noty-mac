@@ -19,10 +19,10 @@ async function main() {
   await fs.mkdir(outDir, { recursive: true });
 
   await esbuild.build({
-    entryPoints: [path.join(srcDir, 'main.tsx')],
+    entryPoints: { 'main.bundle': path.join(srcDir, 'main.tsx'), 'notifications.bundle': path.join(srcDir, 'notifications.tsx') },
     tsconfig: path.join(projectRoot, 'tsconfig.renderer.json'),
     bundle: true,
-    outfile: path.join(outDir, 'main.bundle.js'),
+    outdir: outDir,
     format: 'iife',
     // Electron 28 ships Chromium 120. Matching narrows the transform surface.
     target: 'chrome120',
@@ -43,6 +43,9 @@ async function main() {
     path.join(srcDir, 'main.css'),
     path.join(outDir, 'main.css')
   );
+  for (const file of ['index.html', 'styles.css', 'theme.css']) {
+    await fs.copyFile(path.join(srcDir, file), path.join(outDir, file));
+  }
 }
 
 main().catch((err) => {

@@ -1316,7 +1316,8 @@ svg.is-spinning {
   font-weight: 500;
 }
 
-.settings-form-field input {
+.settings-form-field input,
+.settings-form-field select {
   width: 100%;
   height: 34px;
   padding: 0 var(--space-3);
@@ -1329,12 +1330,14 @@ svg.is-spinning {
   font-size: var(--fs-body);
 }
 
-.settings-form-field input:focus {
+.settings-form-field input:focus,
+.settings-form-field select:focus {
   border-color: var(--color-accent);
   box-shadow: 0 0 0 3px var(--color-accent-subtle);
 }
 
-.settings-form-field input:disabled {
+.settings-form-field input:disabled,
+.settings-form-field select:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
@@ -1344,6 +1347,9 @@ svg.is-spinning {
   grid-column: 1 / -1;
   justify-content: flex-end;
 }
+
+.notification-type-field { grid-column: 1 / -1; }
+.channel-settings-type { color: var(--color-accent); font-size: var(--fs-caption); }
 
 .settings-directory-list {
   display: grid;

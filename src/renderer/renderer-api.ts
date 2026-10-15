@@ -15,6 +15,7 @@ import type {
   LocalAiTemplateId,
 } from '../main/local-ai-types';
 import type { AppPreferences } from '../main/settings-types';
+import type { AppNotification, Channel, ChannelOptions } from '../main/notification-types';
 import type { CompleteWorkflowTaskInput, WorkflowDefinition, WorkflowRun, WorkflowRunInput, WorkflowSnapshot } from '../main/workflow-types';
 
 export type { AppPreferences } from '../main/settings-types';
@@ -43,11 +44,7 @@ export interface ProjectsApi {
   onUpdated(callback: () => void): () => void;
 }
 
-export interface Channel {
-  id: string;
-  name: string;
-  url: string;
-}
+export type { Channel } from '../main/notification-types';
 
 export interface IntegrationSnapshot {
   scriptSourcePath: string;
@@ -93,8 +90,19 @@ export interface AppApi {
     onTaskOutput(callback: (event: { runId: string; taskId: string; output: string }) => void): () => void;
   };
   getChannels(): Promise<Channel[]>;
-  addChannel(name: string, url: string): Promise<Channel[]>;
+  addChannel(name: string, url: string, options?: ChannelOptions): Promise<Channel[]>;
   removeChannel(id: string): Promise<Channel[]>;
+  getNotifications(): Promise<AppNotification[]>;
+  markAsRead(id: string): Promise<AppNotification[]>;
+  markManyAsRead(ids: string[]): Promise<AppNotification[]>;
+  markAllAsRead(): Promise<AppNotification[]>;
+  clearRead(): Promise<AppNotification[]>;
+  setNotificationCompleted(id: string, completed: boolean): Promise<AppNotification[]>;
+  jumpToNotificationTarget(id: string): Promise<JumpOutcome>;
+  onNewNotification(callback: () => void): () => void;
+  onWindowShown(callback: () => void): () => void;
+  onNotificationJumped(callback: (id: string) => void): () => void;
+  onNotificationsUpdated(callback: () => void): () => void;
   getSettings(): Promise<AppPreferences>;
   updateSettings(settings: AppPreferences): Promise<AppPreferences>;
   selectProjectsDirectory(currentValue: string): Promise<string | null>;
@@ -107,10 +115,12 @@ export interface AppApi {
   applyUpdate(): Promise<UpdateActionResult>;
   onUpdateDownloadProgress(callback: (progress: number) => void): () => void;
   openSettings(): void;
+  openNotificationSettings(): void;
   dashboard: {
     getInitialView(): Promise<DashboardView>;
+    getSettingsTab(): Promise<'general' | 'channels'>;
     setView(view: DashboardView): void;
-    onNavigate(callback: (view: DashboardView) => void): () => void;
+    onNavigate(callback: (view: DashboardView, settingsTab?: 'general' | 'channels') => void): () => void;
   };
   integration: {
     detect(): Promise<IntegrationSnapshot>;

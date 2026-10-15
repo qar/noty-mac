@@ -207,3 +207,26 @@ input {
 #updateProgressText { color: var(--legacy-faint); }
 
 :focus-visible { outline: 1px solid var(--legacy-accent); outline-offset: 2px; }
+
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: 0 0 28px; }
+.icon-btn svg { width: 16px; height: 16px; }
+.icon-btn:disabled { cursor: default; opacity: 0.4; }
+.notification-tabs { display: flex; flex-shrink: 0; padding: 0 12px; gap: 4px; border-bottom: 1px solid var(--legacy-border); }
+.notification-tabs button { border: 0; border-bottom: 2px solid transparent; background: none; color: var(--legacy-muted); padding: 12px 8px; cursor: pointer; font-size: 12px; }
+.notification-tabs button[aria-pressed="true"] { color: var(--legacy-accent); border-bottom-color: var(--legacy-accent); }
+.notification-item { cursor: default; }
+.notification-open { display: block; width: 100%; text-align: left; border: 0; background: none; color: inherit; cursor: pointer; }
+.notification-open:disabled { cursor: progress; }
+.notification-title { color: var(--legacy-text); font-size: 13px; line-height: 1.5; margin-bottom: 5px; overflow-wrap: anywhere; }
+.notification-title svg { margin-left: 6px; color: var(--legacy-faint); vertical-align: middle; }
+.notification-message { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.notification-bottom { display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-top: 6px; min-height: 28px; }
+.notification-channel { margin: 0; overflow-wrap: anywhere; min-width: 0; }
+.complete-notification { color: var(--legacy-success); border-color: var(--legacy-border); }
+.notification-warning { color: var(--legacy-accent); font-size: 11px; margin-top: 5px; }
+.notification-details { margin-top: 5px; color: var(--legacy-faint); font-size: 11px; }
+.notification-details summary { cursor: pointer; width: fit-content; }
+.notification-details pre { margin-top: 8px; max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--legacy-muted); }
+.notification-error { display: flex; align-items: center; padding: 8px 16px; color: var(--legacy-danger); border-bottom: 1px solid var(--legacy-border); overflow-wrap: anywhere; }
+.empty-state p { margin-top: 12px; }
+.notification-count { letter-spacing: 0; }

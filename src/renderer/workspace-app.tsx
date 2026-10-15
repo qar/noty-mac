@@ -164,9 +164,10 @@ export function WorkspaceApp() {
     const dashboardApi = window.api?.dashboard;
     if (!dashboardApi) return;
     let active = true;
-    const navigate = (view: DashboardView): void => {
+    const navigate = (view: DashboardView, tab?: 'general' | 'channels'): void => {
       if (!active || !['dashboard', 'workspace', 'workflow', 'settings'].includes(view)) return;
       setActiveView(view);
+      if (view === 'settings' && tab) setSettingsTab(tab);
       if (view !== 'workspace') {
         setContextMenu(null);
         setRenaming(null);
@@ -174,9 +175,8 @@ export function WorkspaceApp() {
       }
     };
 
-    dashboardApi
-      .getInitialView()
-      .then(navigate)
+    Promise.all([dashboardApi.getInitialView(), dashboardApi.getSettingsTab()])
+      .then(([view, tab]) => navigate(view, tab))
       .catch((error) => console.error('[main] dashboard initial view failed:', error));
     const unsubscribe = dashboardApi.onNavigate(navigate);
     return () => {

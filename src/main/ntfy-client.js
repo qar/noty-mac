@@ -1,7 +1,8 @@
 const { EventEmitter } = require('events');
-const { Notification } = require('electron');
+const { Notification, safeStorage } = require('electron');
 const store = require('./store');
 const crypto = require('crypto');
+const { normalizePlaneNotification, retainNotifications } = require('./notification-core');
 
 function generateId() {
   return crypto.randomBytes(16).toString('hex');
@@ -134,6 +135,7 @@ class NtfyClient extends EventEmitter {
   constructor() {
     super();
     this.connections = new Map(); // channelId -> EventSource
+    this.reconnectTimers = new Map();
   }
 
   subscribeToChannel(channel) {
@@ -160,49 +162,69 @@ class NtfyClient extends EventEmitter {
       ? Math.floor(lastTimestamp / 1000)
       : lastTimestamp;
     const sinceParam = sinceTimestamp > 0 ? `since=${sinceTimestamp}` : 'since=all';
-    const url = `${channel.url}/json?${sinceParam}`;
+    const url = `${channel.url.replace(/\/+$/, '')}/json?${sinceParam}`;
 
     const controller = new AbortController();
     this.connections.set(channel.id, controller);
 
     try {
+      const headers = {};
+      if (channel.encryptedAccessToken) {
+        headers.Authorization = `Bearer ${safeStorage.decryptString(Buffer.from(channel.encryptedAccessToken, 'base64'))}`;
+      }
       const response = await fetch(url, {
         method: 'GET',
-        signal: controller.signal
+        signal: controller.signal,
+        headers
       });
+      if (!response.ok || !response.body) throw new Error(`ntfy HTTP ${response.status}`);
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n');
-
-        for (const line of lines) {
-          if (line.trim()) {
-            try {
-              const data = JSON.parse(line);
-              if (data.event === 'message') {
-                this.handleNotification(channel, data);
-              }
-            } catch (e) {
-              // 忽略解析错误
-            }
-          }
+      let pending = '';
+      const consume = (line) => {
+        if (!line.trim() || controller.signal.aborted) return;
+        let data;
+        try {
+          data = JSON.parse(line);
+        } catch {
+          console.warn(`Invalid ntfy JSON for ${channel.name}`);
+          return;
         }
+        if (data.event === 'message') this.handleNotification(channel, data);
+      };
+
+      try {
+        while (!controller.signal.aborted) {
+          const { done, value } = await reader.read();
+          if (done) {
+            pending += decoder.decode();
+            consume(pending);
+            break;
+          }
+          pending += decoder.decode(value, { stream: true });
+          const lines = pending.split('\n');
+          pending = lines.pop();
+          lines.forEach(consume);
+        }
+      } finally {
+        await reader.cancel().catch(() => {});
+        reader.releaseLock();
       }
     } catch (error) {
       if (error.name !== 'AbortError') {
         console.error(`Connection error for ${channel.name}:`, error);
-        // 5秒后重连
-        setTimeout(() => {
-          if (this.connections.has(channel.id)) {
-            this.startSSEConnection(channel);
-          }
+      }
+    } finally {
+      // A clean EOF also needs reconnecting; compare controllers so an old
+      // connection cannot resurrect a removed or replaced subscription.
+      if (this.connections.get(channel.id) === controller && !controller.signal.aborted) {
+        const timer = setTimeout(() => {
+          this.reconnectTimers.delete(channel.id);
+          if (this.connections.get(channel.id) === controller) this.startSSEConnection(channel);
         }, 5000);
+        timer.unref?.();
+        this.reconnectTimers.set(channel.id, timer);
       }
     }
   }
@@ -211,23 +233,31 @@ class NtfyClient extends EventEmitter {
     const notifications = store.get('notifications');
 
     // 去重：ntfy 消息 ID 已存在则跳过
-    if (data.id && notifications.some(n => n.ntfyId === data.id)) {
+    if (data.id && notifications.some(n => n.channelId === channel.id && n.ntfyId === data.id)) {
       return;
     }
 
     const rawTimestamp = data.time ?? Date.now();
     const normalizedTimestamp = rawTimestamp < 1e12 ? rawTimestamp * 1000 : rawTimestamp;
 
-    const metadata = normalizeNotificationMetadata(data);
+    const type = channel.type || 'tmux-agent';
+    const plane = type === 'plane'
+      ? normalizePlaneNotification(channel, data.message || '', data.click)
+      : null;
+    const metadata = plane?.metadata || normalizeNotificationMetadata(data);
+    if (plane?.metadata.plane.deliveryId && notifications.some(n => n.channelId === channel.id
+      && n.metadata?.plane?.deliveryId === plane.metadata.plane.deliveryId)) return;
 
     const notification = {
       id: generateId(),
       ntfyId: data.id || null,
       channelId: channel.id,
-      title: data.title || channel.name,
-      message: data.message || '',
+      type,
+      title: plane?.title || data.title || channel.name,
+      message: plane?.message || data.message || '',
       timestamp: normalizedTimestamp,
-      read: false
+      read: false,
+      ...(plane ? { completedAt: null } : {})
     };
 
     if (metadata) {
@@ -235,29 +265,26 @@ class NtfyClient extends EventEmitter {
     }
     notifications.unshift(notification);
 
-    // 限制历史记录数量
-    if (notifications.length > 1000) {
-      notifications.pop();
-    }
-
-    store.set('notifications', notifications);
+    store.set('notifications', retainNotifications(notifications));
+    this.emit('notification', notification);
 
     // 显示系统通知
     const settings = store.get('settings');
-    const cleanTitle = notification.title.replace(/\s*\([^)]*\)\s*$/, '');
+    const cleanTitle = plane ? notification.title : notification.title.replace(/\s*\([^)]*\)\s*$/, '');
     const project = metadata?.project;
     const projectLabel = project
       ? (project.branch ? `${project.name} (${project.branch})` : project.name)
       : null;
-    const cleanBody = notification.message
+    const cleanBody = plane ? notification.message : notification.message
       .split('\n')
       .filter(line => !/^\s*(?:🖥\s*)?tmux\s*:/i.test(line) && !/^\s*📂\s/.test(line))
       .join('\n')
       .trim();
 
+    if (!Notification.isSupported()) return;
     const systemNotification = new Notification({
       title: cleanTitle,
-      subtitle: projectLabel || undefined,
+      subtitle: plane ? 'RtiTek Plane' : projectLabel || undefined,
       body: cleanBody || notification.message,
       silent: !settings.soundEnabled
     });
@@ -268,11 +295,11 @@ class NtfyClient extends EventEmitter {
 
     systemNotification.show();
 
-    // 触发事件
-    this.emit('notification', notification);
   }
 
   unsubscribeFromChannel(channelId) {
+    clearTimeout(this.reconnectTimers.get(channelId));
+    this.reconnectTimers.delete(channelId);
     const controller = this.connections.get(channelId);
     if (controller) {
       controller.abort();
@@ -282,6 +309,8 @@ class NtfyClient extends EventEmitter {
   }
 
   unsubscribeAll() {
+    for (const timer of this.reconnectTimers.values()) clearTimeout(timer);
+    this.reconnectTimers.clear();
     for (const [channelId, controller] of this.connections) {
       controller.abort();
     }

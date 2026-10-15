@@ -1,11 +1,12 @@
-const { app, Tray, Menu, ipcMain, nativeImage, Notification } = require('electron');
+const { app, Tray, Menu, ipcMain, nativeImage, Notification, shell, safeStorage } = require('electron');
 const { execFile } = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
 const store = require('./store');
 const NtfyClient = require('./ntfy-client');
+const { channelFromInput, safeWebUrl, isPendingNotification, clearReadNotifications, setNotificationCompleted } = require('./notification-core');
 const Updater = require('./updater');
-const { toggleWindow, getWindow } = require('./window');
+const { toggleWindow, showWindow, getWindow } = require('./window');
 const { openMainWindow, hideMainWindow, getMainWindow, destroyMainWindow } = require('./main-window');
 const workspace = require('./workspace');
 const { probeTmux } = require('./tmux-probe');
@@ -53,6 +54,36 @@ function extractTmuxTargetFromMessage(message) {
 function resolveNotificationTmuxTarget(notification) {
   return notification?.metadata?.tmux?.target
     || extractTmuxTargetFromMessage(notification?.message || '');
+}
+
+async function openNotificationTarget(notification, options = {}) {
+  if (notification?.type === 'plane') {
+    const url = safeWebUrl(notification.metadata?.plane?.url);
+    if (!url) return { success: false, reason: '消息缺少任务链接，请检查 Plane 网站地址和工作区配置' };
+    try {
+      await shell.openExternal(url);
+      return { success: true };
+    } catch {
+      return { success: false, reason: '无法打开浏览器，请重试' };
+    }
+  }
+  const target = resolveNotificationTmuxTarget(notification);
+  if (!target) return { success: false, reason: 'no_target' };
+  const chainTestApp = options.chainTestApp || notification?.metadata?.chainTestApp || null;
+  return jumpToTmuxTarget(target, { chainTestApp });
+}
+
+function publicChannels() {
+  return store.get('channels').map(({ encryptedAccessToken, ...channel }) => ({
+    ...channel,
+    type: channel.type || 'tmux-agent',
+    hasAccessToken: Boolean(encryptedAccessToken),
+  }));
+}
+
+function notificationsChanged() {
+  updateTrayIcon();
+  getWindow()?.webContents.send('notifications-updated');
 }
 
 function execTmux(args) {
@@ -373,14 +404,11 @@ app.whenReady().then(async () => {
   });
 
   ntfyClient.on('notification-clicked', async (notification) => {
-    const target = resolveNotificationTmuxTarget(notification);
+    const result = await openNotificationTarget(notification);
 
-    if (!target) {
-      return;
+    if (!result.success && notification.type === 'plane') {
+      showWindow(tray);
     }
-
-    const chainTestApp = notification?.metadata?.chainTestApp || null;
-    const result = await jumpToTmuxTarget(target, { chainTestApp });
 
     if (result.success) {
       const notifications = store.get('notifications');
@@ -552,7 +580,7 @@ function buildTrayContextMenu() {
 function createTray() {
   // 创建托盘图标
   tray = new Tray(loadTrayTemplateImage());
-  tray.setToolTip('Noty - ntfy.sh 通知');
+  tray.setToolTip('Noty - AI agent 与 Plane 通知');
 
   // 点击托盘图标
   tray.on('click', () => {
@@ -569,18 +597,21 @@ function createTray() {
 
 function updateTrayIcon() {
   const notifications = store.get('notifications');
-  const unreadCount = notifications.filter(n => !n.read).length;
+  const unreadCount = notifications.filter(isPendingNotification).length;
 
   tray.setImage(loadTrayTemplateImage());
   tray.setTitle(unreadCount > 0 ? ` ${unreadCount}` : '');
 }
 
-function openSettingsView() {
+let requestedSettingsTab = 'general';
+
+function openSettingsView(tab = 'general') {
+  requestedSettingsTab = tab;
   requestedDashboardView = 'settings';
   const window = openMainWindow();
   const navigate = () => {
     if (!window.isDestroyed()) {
-      window.webContents.send('dashboard:navigate', 'settings');
+      window.webContents.send('dashboard:navigate', 'settings', requestedSettingsTab);
     }
   };
 
@@ -638,8 +669,17 @@ function setupIPC() {
 
   // 清空已读
   ipcMain.handle('clear-read', () => {
-    const notifications = store.get('notifications').filter(n => !n.read);
+    const notifications = clearReadNotifications(store.get('notifications'));
     store.set('notifications', notifications);
+    notificationsChanged();
+    return notifications;
+  });
+
+  ipcMain.handle('set-notification-completed', (_event, id, completed) => {
+    if (typeof id !== 'string' || typeof completed !== 'boolean') throw new Error('通知状态无效');
+    const notifications = setNotificationCompleted(store.get('notifications'), id, completed);
+    store.set('notifications', notifications);
+    notificationsChanged();
     return notifications;
   });
 
@@ -647,39 +687,26 @@ function setupIPC() {
   ipcMain.handle('jump-to-notification-target', async (event, id, options = {}) => {
     const notifications = store.get('notifications');
     const notification = notifications.find(n => n.id === id);
-    const target = resolveNotificationTmuxTarget(notification);
-
-    if (!target) {
-      return { success: false, reason: 'no_target' };
-    }
-
-    const chainTestApp = options.chainTestApp
-      || notification?.metadata?.chainTestApp
-      || null;
-
-    return jumpToTmuxTarget(target, { chainTestApp });
+    return openNotificationTarget(notification, options);
   });
 
   // 获取频道列表
   ipcMain.handle('get-channels', () => {
-    return store.get('channels');
+    return publicChannels();
   });
 
   // 添加频道
-  ipcMain.handle('add-channel', (event, name, url) => {
+  ipcMain.handle('add-channel', (event, name, url, options = {}) => {
     const channels = store.get('channels');
-
-    // 确保 URL 格式正确
-    let channelUrl = url;
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      channelUrl = `https://ntfy.sh/${url}`;
-    }
-
     const channel = {
       id: generateId(),
-      name: name || url,
-      url: channelUrl
+      ...channelFromInput(name, url, options),
     };
+    if (channels.some(c => c.url.replace(/\/+$/, '') === channel.url)) throw new Error('该 ntfy 频道已存在');
+    if (typeof options.accessToken === 'string' && options.accessToken.trim()) {
+      if (!safeStorage.isEncryptionAvailable()) throw new Error('系统安全存储不可用，无法保存访问令牌');
+      channel.encryptedAccessToken = safeStorage.encryptString(options.accessToken.trim()).toString('base64');
+    }
 
     channels.push(channel);
     store.set('channels', channels);
@@ -689,7 +716,7 @@ function setupIPC() {
       ntfyClient.subscribeToChannel(channel);
     }
 
-    return channels;
+    return publicChannels();
   });
 
   // 删除频道
@@ -702,7 +729,7 @@ function setupIPC() {
       ntfyClient.unsubscribeFromChannel(id);
     }
 
-    return channels;
+    return publicChannels();
   });
 
   // 关闭窗口
@@ -714,6 +741,7 @@ function setupIPC() {
   });
 
   ipcMain.handle('dashboard:get-initial-view', () => requestedDashboardView);
+  ipcMain.handle('dashboard:get-settings-tab', () => requestedSettingsTab);
   ipcMain.on('dashboard:set-view', (event, view) => {
     if (view === 'dashboard' || view === 'workspace' || view === 'workflow' || view === 'settings') {
       requestedDashboardView = view;
@@ -724,6 +752,7 @@ function setupIPC() {
   ipcMain.on('open-settings', () => {
     openSettingsView();
   });
+  ipcMain.on('open-notification-settings', () => openSettingsView('channels'));
 
   // 获取应用版本
   ipcMain.handle('get-app-version', () => {

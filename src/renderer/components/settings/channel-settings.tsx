@@ -1,11 +1,16 @@
-import { Plus, Radio, Trash2 } from 'lucide-react';
+import { BellPlus, ClipboardList, Terminal, Trash2 } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 import type { Channel } from '../../renderer-api';
+import type { NotificationType } from '../../../main/notification-types';
 
 export function ChannelSettings() {
   const [channels, setChannels] = useState<Channel[] | null>(null);
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
+  const [type, setType] = useState<NotificationType>('tmux-agent');
+  const [planeBaseUrl, setPlaneBaseUrl] = useState('');
+  const [planeWorkspaceSlug, setPlaneWorkspaceSlug] = useState('');
+  const [accessToken, setAccessToken] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -19,7 +24,7 @@ export function ChannelSettings() {
       })
       .catch((loadError) => {
         console.error('[settings] getChannels failed:', loadError);
-        if (active) setError('无法载入订阅频道');
+        if (active) setError('无法载入通知来源');
       });
     return () => {
       active = false;
@@ -33,13 +38,16 @@ export function ChannelSettings() {
     setSubmitting(true);
     setError(null);
     try {
-      const next = await window.api.addChannel(name.trim() || nextUrl, nextUrl);
+      const next = await window.api.addChannel(name.trim(), nextUrl, {
+        type, planeBaseUrl, planeWorkspaceSlug, accessToken,
+      });
       setChannels(next);
       setName('');
       setUrl('');
+      setAccessToken('');
     } catch (addError) {
       console.error('[settings] addChannel failed:', addError);
-      setError('添加频道失败，请检查地址后重试');
+      setError(addError instanceof Error ? addError.message : '新建通知失败，请重试');
     } finally {
       setSubmitting(false);
     }
@@ -63,19 +71,21 @@ export function ChannelSettings() {
     <div className="settings-sections">
       <section className="settings-section" aria-labelledby="channelsTitle">
         <div className="settings-section-heading">
-          <h2 id="channelsTitle">订阅频道</h2>
+          <h2 id="channelsTitle">通知来源</h2>
         </div>
 
         <div className="settings-list channel-settings-list">
           {channels?.length ? (
             channels.map((channel) => (
               <div className="settings-row channel-settings-row" key={channel.id}>
-                <Radio aria-hidden="true" />
+                {channel.type === 'plane' ? <ClipboardList aria-hidden="true" /> : <Terminal aria-hidden="true" />}
                 <div className="channel-settings-copy">
                   <div className="channel-settings-name">{channel.name}</div>
+                  <span className="channel-settings-type">{channel.type === 'plane' ? 'RtiTek Plane 通知' : 'Tmux 内的 AI agent 通知'}</span>
                   <code className="channel-settings-url" title={channel.url}>
                     {channel.url}
                   </code>
+                  {channel.planeBaseUrl ? <span className="channel-settings-url">{channel.planeBaseUrl}</span> : null}
                 </div>
                 <button
                   type="button"
@@ -90,31 +100,38 @@ export function ChannelSettings() {
               </div>
             ))
           ) : channels ? (
-            <div className="settings-empty-row">暂无订阅频道</div>
+            <div className="settings-empty-row">暂无通知来源</div>
           ) : (
-            <div className="settings-empty-row">正在载入频道</div>
+            <div className="settings-empty-row">正在载入通知来源</div>
           )}
         </div>
       </section>
 
       <section className="settings-section" aria-labelledby="addChannelTitle">
         <div className="settings-section-heading">
-          <h2 id="addChannelTitle">添加频道</h2>
+          <h2 id="addChannelTitle">新建通知</h2>
         </div>
         <form className="settings-form" onSubmit={(event) => void addChannel(event)}>
+          <label className="settings-form-field notification-type-field">
+            <span>通知类型</span>
+            <select aria-label="通知类型" value={type} disabled={submitting} onChange={(event) => setType(event.target.value as NotificationType)}>
+              <option value="tmux-agent">Tmux 内的 AI agent 通知</option>
+              <option value="plane">RtiTek Plane 通知</option>
+            </select>
+          </label>
           <label className="settings-form-field">
-            <span>频道名称</span>
+            <span>通知名称</span>
             <input
               type="text"
               value={name}
               maxLength={80}
-              placeholder="例如：我的通知"
+              placeholder={type === 'plane' ? 'RtiTek Plane' : 'Tmux AI agent'}
               disabled={submitting}
               onChange={(event) => setName(event.target.value)}
             />
           </label>
           <label className="settings-form-field">
-            <span>频道地址</span>
+            <span>ntfy 频道地址</span>
             <input
               type="text"
               value={url}
@@ -124,53 +141,34 @@ export function ChannelSettings() {
               onChange={(event) => setUrl(event.target.value)}
             />
           </label>
+          <label className="settings-form-field">
+            <span>ntfy 访问令牌（可选）</span>
+            <input type="password" value={accessToken} autoComplete="off" disabled={submitting} onChange={(event) => setAccessToken(event.target.value)} />
+          </label>
+          {type === 'plane' ? <>
+            <label className="settings-form-field">
+              <span>Plane 网站地址</span>
+              <input type="url" value={planeBaseUrl} required placeholder="https://plane.example.com" disabled={submitting} onChange={(event) => setPlaneBaseUrl(event.target.value)} />
+            </label>
+            <label className="settings-form-field">
+              <span>工作区标识（可选）</span>
+              <input type="text" value={planeWorkspaceSlug} placeholder="rtitek" disabled={submitting} onChange={(event) => setPlaneWorkspaceSlug(event.target.value)} />
+            </label>
+          </> : null}
           <div className="settings-form-actions">
             <button
               type="submit"
               className="btn btn-primary"
               disabled={submitting || !url.trim()}
             >
-              <Plus aria-hidden="true" />
-              添加频道
+              <BellPlus aria-hidden="true" />
+              新建通知
             </button>
           </div>
         </form>
         {error ? <p className="settings-feedback is-error">{error}</p> : null}
       </section>
 
-      <section className="settings-section" aria-labelledby="notificationSetupTitle">
-        <div className="settings-section-heading">
-          <h2 id="notificationSetupTitle">通知接入</h2>
-        </div>
-        <div className="settings-instructions">
-          <Instruction
-            title="设置频道变量"
-            code={'export NTFY_CHANNEL="你的频道地址或 topic"'}
-          />
-          <Instruction
-            title="Claude Code"
-            code={'curl -d "任务完成" https://ntfy.sh/$NTFY_CHANNEL'}
-          />
-          <Instruction
-            title="通用脚本"
-            code={
-              'curl -H "Title: Noty Test" -H "Tags: white_check_mark" -d "Hello from script" https://ntfy.sh/$NTFY_CHANNEL'
-            }
-          />
-        </div>
-        <p className="settings-note">
-          tmux 和 kitty 只影响通知跳转；通知接收本身不依赖它们。
-        </p>
-      </section>
-    </div>
-  );
-}
-
-function Instruction({ title, code }: { title: string; code: string }) {
-  return (
-    <div className="settings-instruction">
-      <div className="settings-instruction-title">{title}</div>
-      <pre className="settings-code"><code>{code}</code></pre>
     </div>
   );
 }
