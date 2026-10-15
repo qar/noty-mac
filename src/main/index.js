@@ -411,14 +411,6 @@ app.whenReady().then(async () => {
     }
 
     if (result.success) {
-      const notifications = store.get('notifications');
-      const item = notifications.find(n => n.id === notification.id);
-      if (item && !item.read) {
-        item.read = true;
-        store.set('notifications', notifications);
-        updateTrayIcon();
-      }
-
       const window = getWindow();
       if (window) {
         window.webContents.send('notification-jumped', notification.id);

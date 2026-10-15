@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BellPlus, Check, CheckCheck, ExternalLink, Inbox, RotateCcw, Settings } from 'lucide-react';
+import { BellPlus, Check, CheckCheck, ExternalLink, Inbox, MailCheck, RotateCcw, Settings } from 'lucide-react';
 import type { AppNotification, Channel } from '../main/notification-types';
 import './renderer-api';
 
@@ -76,7 +76,6 @@ function Notifications() {
         const result = await window.api.jumpToNotificationTarget(item.id);
         if (!result.success) throw new Error(item.type === 'plane' ? result.reason : '无法跳转到 tmux，请确认会话仍在运行');
       }
-      await window.api.markManyAsRead(group.map(entry => entry.id));
     });
   };
 
@@ -110,29 +109,44 @@ function Notifications() {
         const plane = item.type === 'plane';
         const source = channels.find(channel => channel.id === item.channelId);
         const project = item.metadata?.project;
-        const message = plane ? item.message : item.message.split('\n').filter(line => !/^\s*(?:🖥\s*)?tmux\s*:/i.test(line) && !/^\s*📂\s/.test(line)).join('\n').trim();
+        const message = formatMessage(item);
         const title = plane ? item.title : item.title.replace(/\s*\([^)]*\)\s*$/, '');
         const target = plane ? item.metadata?.plane?.url : item.metadata?.tmux?.target;
-        return <article key={item.id} className={`notification-item ${(!plane && group.every(entry => entry.read)) || item.completedAt ? 'read' : ''}`}>
-          <button className="notification-open" disabled={Boolean(busy)} onClick={() => open(group)} aria-label={plane ? `打开任务：${title}` : title}>
-            <div className="notification-header">
-              <span className="notification-type">{plane ? 'RtiTek Plane' : 'Tmux AI agent'}{group.length > 1 ? <span className="notification-count">×{group.length}</span> : null}</span>
-              <time className="notification-time" dateTime={new Date(item.timestamp).toISOString()} title={new Date(item.timestamp).toLocaleString()}>{formatTime(item.timestamp)}</time>
+        const allRead = group.every(entry => entry.read);
+        const readLabel = allRead ? '已读' : group.length > 1 ? '标记本组已读' : '标记已读';
+        return <article key={item.id} className={`notification-item ${(!plane && allRead) || item.completedAt ? 'read' : ''}`}>
+          <div className="notification-header">
+            <span className="notification-type">{plane ? 'RtiTek Plane' : 'Tmux AI agent'}{group.length > 1 ? <span className="notification-count">×{group.length}</span> : null}</span>
+            <time className="notification-time" dateTime={new Date(item.timestamp).toISOString()} title={new Date(item.timestamp).toLocaleString()}>{formatTime(item.timestamp)}</time>
+          </div>
+          <div className="notification-heading">
+            <button className="notification-open" disabled={Boolean(busy)} onClick={() => open(group)} aria-label={plane ? `打开任务：${title}` : title}>
+              <span className="notification-title">{title}{target ? <ExternalLink size={12} /> : null}</span>
+            </button>
+            <div className="notification-item-actions">
+              <button className="icon-btn" disabled={Boolean(busy) || allRead} title={readLabel} aria-label={`${readLabel}：${title}`} onClick={() => void perform(item.id, () => window.api.markManyAsRead(group.map(entry => entry.id)))}><MailCheck /></button>
+              {plane ? <button className="icon-btn complete-notification" disabled={Boolean(busy)} title={item.completedAt ? '恢复待处理' : '标记已处理'} aria-label={item.completedAt ? `恢复待处理：${title}` : `标记已处理：${title}`} onClick={() => void perform(item.id, () => window.api.setNotificationCompleted(item.id, !item.completedAt))}>{item.completedAt ? <RotateCcw /> : <Check />}</button> : null}
             </div>
-            <div className="notification-title">{title}{target ? <ExternalLink size={12} /> : null}</div>
-            {project ? <div className="notification-session-title">{project.name}{project.branch ? ` (${project.branch})` : ''}</div> : null}
-            <div className="notification-message">{message}</div>
-          </button>
+          </div>
+          {project ? <div className="notification-session-title">{project.name}{project.branch ? ` (${project.branch})` : ''}</div> : null}
+          <pre className="notification-message">{message}</pre>
           <div className="notification-bottom">
             <span className="notification-channel">{source?.name || '已移除的通知来源'}</span>
-            {plane ? <button className="icon-btn complete-notification" disabled={Boolean(busy)} title={item.completedAt ? '恢复待处理' : '标记已处理'} aria-label={item.completedAt ? `恢复待处理：${title}` : `标记已处理：${title}`} onClick={() => void perform(item.id, () => window.api.setNotificationCompleted(item.id, !item.completedAt))}>{item.completedAt ? <RotateCcw /> : <Check />}</button> : null}
           </div>
           {plane && !target ? <div className="notification-warning">缺少任务链接</div> : null}
-          {plane ? <details className="notification-details"><summary>事件详情</summary><pre>{item.metadata?.plane?.rawPayload}</pre></details> : null}
         </article>;
       })}
     </main>
   </div>;
+}
+
+function formatMessage(item: AppNotification): string {
+  const raw = item.metadata?.plane?.rawPayload ?? item.message;
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
 }
 
 function formatTime(timestamp: number): string {
