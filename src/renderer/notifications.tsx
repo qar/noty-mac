@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Archive, BellPlus, Clock3, ExternalLink, Folder, GitBranch, Inbox, RotateCcw, Settings, Terminal, UserRound } from 'lucide-react';
 import type { AppNotification, Channel } from '../main/notification-types';
-import { isPendingNotification, planeCommentPreview } from '../main/notification-core';
+import { isPendingNotification, planeCommentPreview, tmuxSourceProject } from '../main/notification-core';
 import './renderer-api';
 
 type View = 'active' | 'history';
@@ -15,6 +15,7 @@ function groupNotifications(items: AppNotification[], selectedId: string | null)
     if (target && previous?.[0].type !== 'plane' && previous?.[0].channelId === item.channelId
       && previous?.[0].id !== selectedId
       && previous?.[0].metadata?.project?.name === item.metadata?.project?.name
+      && previous?.[0].metadata?.tmux?.sourceProject === item.metadata?.tmux?.sourceProject
       && previous?.[0].metadata?.tmux?.target === target) previous.push(item);
     else groups.push([item]);
   }
@@ -206,6 +207,7 @@ function formatMessage(item: AppNotification): { text: string; isJson: boolean }
     const text = raw.split('\n').filter(line => {
       const projectLine = line.match(/^\s*📂\s+([^\s(]+)(?:\s*\(([^)]+)\))?\s*$/);
       const contextLine = (item.metadata?.tmux?.target && /^\s*(?:🖥\s*)?tmux\s*:\s*[A-Za-z0-9_.:%@+/-]+\s*$/i.test(line))
+        || (item.metadata?.tmux?.sourceProject && tmuxSourceProject(line) === item.metadata.tmux.sourceProject)
         || (project && projectLine && projectLine[1] === project.name && (projectLine[2] || '') === (project.branch || ''));
       if (contextLine) removedContext = true;
       return !contextLine;

@@ -5,12 +5,16 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
-function publish(input, { panes, pane = '%31', codexThread = 'test-thread' }) {
+function publish(input, { panes, pane = '%31', codexThread = 'test-thread', session, sessionRaw }) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'noty-hook-'));
   try {
     const bin = path.join(root, 'bin');
     const capture = path.join(root, 'payload.json');
     fs.mkdirSync(bin);
+    const sessions = path.join(root, 'codex', 'sessions', '2026', '10', '16');
+    fs.mkdirSync(sessions, { recursive: true });
+    if (session || sessionRaw) fs.writeFileSync(path.join(sessions, `rollout-2026-10-16T00-00-00-${codexThread}.jsonl`),
+      sessionRaw ?? JSON.stringify({ type: 'session_meta', payload: { id: codexThread, ...session } }) + '\n');
     fs.writeFileSync(path.join(bin, 'tmux'), `#!${process.execPath}
 const args = process.argv.slice(2);
 const panes = JSON.parse(process.env.TEST_PANES);
@@ -34,6 +38,7 @@ require('node:fs').writeFileSync(process.env.TEST_CAPTURE, args[args.indexOf('-d
       input: JSON.stringify({ title: 'Test notification', message: 'Done', ...input }),
       env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, NTFY_CHANNEL: 'test-topic', NTFY_SERVER: 'https://invalid.example',
         TMUX_PANE: pane, TMUX: '/tmp/test-tmux/default,123,0', CODEX_THREAD_ID: codexThread,
+        CODEX_HOME: path.join(root, 'codex'),
         TEST_PANES: JSON.stringify(panes), TEST_CAPTURE: capture },
     });
     return JSON.parse(fs.readFileSync(capture, 'utf8'));
@@ -96,6 +101,50 @@ test('missing or stale context never falls back to the active client', () => {
     const payload = publish({ cwd: '/work/unrelated' }, { panes, pane });
     assert.equal(payload.tmux, undefined);
     assert.doesNotMatch(payload.message, /tmux:/);
+  }
+});
+
+const reviewThread = '11111111-2222-3333-4444-555555555555';
+const reviewPanes = [
+  { ...panes[0], pane_current_command: 'codex' },
+  { ...panes[1], pane_id: '%34', pane_current_path: '/work/hl-trv-app', pane_current_command: 'codex' },
+  { ...panes[1], pane_id: '%36', pane_current_path: '/work/hl-trv-app', pane_current_command: 'zsh' },
+  { ...panes[1], pane_id: '%99', pane_current_path: '/work/rtm-review-283', pane_current_command: 'codex' },
+];
+
+test('temporary review notifications follow the thread origin, not tool cwd or inherited daemon pane', () => {
+  const payload = publish({ cwd: '/work/rtm-review-283' }, {
+    panes: reviewPanes, codexThread: reviewThread, session: { cwd: '/work/hl-trv-app' },
+  });
+  assert.equal(payload.tmux?.target, '%34');
+  assert.equal(payload.tmux.sourceProject, 'hl-trv-app');
+  assert.match(payload.message, /tmux-source: \{"project":"hl-trv-app"\}/);
+  assert.doesNotMatch(payload.message, /\/work\//);
+});
+
+test('a known origin that is ambiguous or unavailable never falls back to the tool checkout', () => {
+  for (const candidates of [reviewPanes.filter(p => !['%34', '%36'].includes(p.pane_id)),
+    [...reviewPanes, { ...reviewPanes[1], pane_id: '%35' }]]) {
+    assert.equal(publish({ cwd: '/work/rtm-review-283' }, {
+      panes: candidates, codexThread: reviewThread, session: { cwd: '/work/hl-trv-app' },
+    }).tmux, undefined);
+  }
+});
+
+test('explicit targets retain precedence over thread origin', () => {
+  const payload = publish({ cwd: '/work/rtm-review-283', tmux: { target: '%99' } }, {
+    panes: reviewPanes, codexThread: reviewThread, session: { cwd: '/work/hl-trv-app' },
+  });
+  assert.equal(payload.tmux.target, '%99');
+  assert.equal(payload.tmux.sourceProject, undefined);
+});
+
+test('invalid or mismatched session headers do not invent a different source', () => {
+  for (const sessionRaw of ['invalid json\n', JSON.stringify({ type: 'session_meta', payload: { id: 'other', cwd: '/work/hl-trv-app' } }),
+    JSON.stringify({ type: 'session_meta', payload: { id: reviewThread, cwd: 'relative' } })]) {
+    const payload = publish({ cwd: '/work/rtm-review-283' }, { panes: reviewPanes, codexThread: reviewThread, sessionRaw });
+    assert.equal(payload.tmux.target, '%99');
+    assert.equal(payload.tmux.sourceProject, undefined);
   }
 });
 

@@ -48,6 +48,7 @@ fi
 
 # --- tmux target resolution (priority: input target > session/window/pane > local detect) ---
 SOURCE_TMUX_PANE="${TMUX_PANE:-}"
+SOURCE_PROJECT=""
 TMUX_TARGET="$(echo "$INPUT" | jq -r '.tmux.target // .metadata.tmux.target // .tmuxTarget // .tmux_target // .target // empty')"
 TMUX_SESSION="$(echo "$INPUT" | jq -r '.tmux.session // .metadata.tmux.session // .tmux_session // empty')"
 TMUX_WINDOW="$(echo "$INPUT" | jq -r '.tmux.window // .metadata.tmux.window // .tmux_window // empty')"
@@ -62,6 +63,21 @@ fi
 
 if [ -z "$TMUX_TARGET" ] && command -v tmux >/dev/null 2>&1; then
   SOURCE_CWD="${CWD:-$PWD}"
+  # Tool cwd may be a temporary review checkout. The thread's session header
+  # records its terminal launch directory without trusting shared-daemon env.
+  THREAD_ID="${CODEX_THREAD_ID:-}"
+  THREAD_CWD=""
+  if [[ "$THREAD_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+    SESSION_FILES=("${CODEX_HOME:-$HOME/.codex}"/sessions/*/*/*/rollout-*-"$THREAD_ID".jsonl)
+    if [ "${#SESSION_FILES[@]}" -eq 1 ] && [ -f "${SESSION_FILES[0]}" ]; then
+      SESSION_HEADER=""
+      IFS= read -r SESSION_HEADER < "${SESSION_FILES[0]}" || true
+      THREAD_CWD="$(printf '%s' "$SESSION_HEADER" | jq -er --arg thread "$THREAD_ID" '
+        select(.type == "session_meta" and .payload.id == $thread) | .payload.cwd
+        | select(type == "string" and startswith("/") and (test("[\\r\\n\\t]") | not))' 2>/dev/null || true)"
+      [ -z "$THREAD_CWD" ] || SOURCE_CWD="$THREAD_CWD"
+    fi
+  fi
   SOURCE_CWD="$(cd "$SOURCE_CWD" 2>/dev/null && pwd -P || printf '%s' "$SOURCE_CWD")"
   SOURCE_ROOT="$(git -C "$SOURCE_CWD" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$SOURCE_CWD")"
   # Shared agent daemons can retain another terminal's TMUX_PANE. Validate it
@@ -83,6 +99,9 @@ if [ -z "$TMUX_TARGET" ] && command -v tmux >/dev/null 2>&1; then
         and all($matches[]; .command == "codex" or (.command | test("^(bash|zsh|sh|fish|dash|ksh|nu)$"))) then $codex[0].id
       else empty end')"
   if [ -n "$TMUX_TARGET" ]; then
+    if [ -n "${THREAD_CWD:-}" ]; then
+      SOURCE_PROJECT="$(basename "$SOURCE_ROOT")"
+    fi
     TMUX_SESSION="$(tmux display-message -p -t "$TMUX_TARGET" '#S' 2>/dev/null || true)"
     TMUX_WINDOW="$(tmux display-message -p -t "$TMUX_TARGET" '#I' 2>/dev/null || true)"
     TMUX_PANE="$(tmux display-message -p -t "$TMUX_TARGET" '#P' 2>/dev/null || true)"
@@ -91,6 +110,10 @@ fi
 
 TMUX_INFO=""
 [ -n "$TMUX_TARGET" ] && TMUX_INFO="🖥 tmux: ${TMUX_TARGET}"
+if [ -n "$SOURCE_PROJECT" ]; then
+  TMUX_INFO="${TMUX_INFO}
+tmux-source: $(jq -cn --arg project "$SOURCE_PROJECT" '{project: $project}')"
+fi
 
 # --- Build human-readable body ---
 BODY="$MESSAGE"
@@ -119,6 +142,7 @@ PAYLOAD="$(jq -n \
   --arg tmuxSession "$TMUX_SESSION" \
   --arg tmuxWindow "$TMUX_WINDOW" \
   --arg tmuxPane "$TMUX_PANE" \
+  --arg sourceProject "$SOURCE_PROJECT" \
   --arg chainTestApp "$CHAIN_TEST_APP" \
   '{
     topic: $topic,
@@ -127,19 +151,19 @@ PAYLOAD="$(jq -n \
     tags: ["robot"]
   }
   + (if ($tmuxTarget | length) > 0 then {
-      tmux: {
+      tmux: ({
         target: $tmuxTarget,
         session: $tmuxSession,
         window: $tmuxWindow,
         pane: $tmuxPane
-      },
+      } + (if $sourceProject != "" then {sourceProject: $sourceProject} else {} end)),
       metadata: {
-        tmux: {
+        tmux: ({
           target: $tmuxTarget,
           session: $tmuxSession,
           window: $tmuxWindow,
           pane: $tmuxPane
-        }
+        } + (if $sourceProject != "" then {sourceProject: $sourceProject} else {} end))
       }
     } else {} end)
   + (if ($chainTestApp | length) > 0 then {

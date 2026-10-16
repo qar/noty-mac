@@ -1,6 +1,21 @@
 import { compile } from 'html-to-text';
 import type { AppNotification, Channel, ChannelOptions, PlaneEvent } from './notification-types';
 
+// ntfy preserves the message body but drops custom top-level metadata.
+export function tmuxSourceProject(message: unknown): string | null {
+  if (typeof message !== 'string') return null;
+  const line = message.split('\n').find(line => line.startsWith('tmux-source: '));
+  if (!line) return null;
+  try {
+    const source = JSON.parse(line.slice('tmux-source: '.length));
+    const project = source?.project;
+    return typeof project === 'string' && project.length > 0 && project.length <= 255
+      && !/[\/\r\n\t]/.test(project) && project !== '.' && project !== '..' ? project : null;
+  } catch {
+    return null;
+  }
+}
+
 const commentToText = compile({
   wordwrap: false,
   selectors: [

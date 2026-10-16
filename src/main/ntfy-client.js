@@ -2,7 +2,7 @@ const { EventEmitter } = require('events');
 const { Notification, safeStorage } = require('electron');
 const store = require('./store');
 const crypto = require('crypto');
-const { normalizePlaneNotification, retainNotifications, planeCommentPreview, hydratePlaneNotifications, planeNotificationTitle } = require('./notification-core');
+const { normalizePlaneNotification, retainNotifications, planeCommentPreview, hydratePlaneNotifications, planeNotificationTitle, tmuxSourceProject } = require('./notification-core');
 const { readPlaneAttachment } = require('./plane-attachment');
 const { PlaneDetailsClient, migratePlaneCredentials } = require('./plane-details');
 
@@ -70,6 +70,8 @@ function normalizeTmuxMetadata(data) {
   }
 
   const tmuxMetadata = { target };
+  const sourceProject = tmuxSourceProject(data.message);
+  if (sourceProject) tmuxMetadata.sourceProject = sourceProject;
   if (session && !session.startsWith('%')) {
     tmuxMetadata.session = session;
   } else {
@@ -397,7 +399,8 @@ class NtfyClient extends EventEmitter {
       ? (metadata.plane.attachment?.error || planeCommentPreview(metadata.plane.rawPayload) || metadata.plane.rawPayload.slice(0, 1000))
       : notification.message
       .split('\n')
-      .filter(line => !/^\s*(?:🖥\s*)?tmux\s*:/i.test(line) && !/^\s*📂\s/.test(line))
+      .filter(line => !/^\s*(?:🖥\s*)?tmux\s*:/i.test(line) && !/^\s*📂\s/.test(line)
+        && !(metadata?.tmux?.sourceProject && tmuxSourceProject(line) === metadata.tmux.sourceProject))
       .join('\n')
       .trim();
 

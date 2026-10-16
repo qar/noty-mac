@@ -95,6 +95,32 @@ test('matching project targets navigate successfully and dismiss the reminder', 
   assert.equal(app.state.notifications[0].read, true);
 });
 
+test('review reminders validate the terminal source separately from the reviewed project', async () => {
+  const app = navigation({ project: 'rtm-review-283', root: '/work/hl-trv-app', target: '%34' });
+  app.state.notifications[0].metadata.tmux.sourceProject = 'hl-trv-app';
+  const result = await app.jump();
+  assert.equal(result.success, true, JSON.stringify(result));
+  assert.ok(app.commands.some(command => command.includes('select-pane') && command.includes('%34')));
+  assert.equal(app.state.notifications[0].metadata.project.name, 'rtm-review-283');
+  assert.equal(app.state.notifications[0].read, true);
+});
+
+test('source-project metadata cannot dismiss a different source or jump to a reused pane', async () => {
+  const app = navigation({ project: 'rtm-review-283', root: '/work/hl-trv-app', target: '%34' });
+  app.state.notifications[0].metadata.tmux.sourceProject = 'hl-trv-app';
+  const other = structuredClone(app.state.notifications[0]);
+  other.id = 'other';
+  other.metadata.tmux.sourceProject = 'different';
+  app.state.notifications.push(other);
+  assert.equal((await app.jump({ notificationIds: ['one', 'other'] })).success, true);
+  assert.equal(app.state.notifications[1].read, false);
+
+  const reused = navigation({ project: 'rtm-review-283', root: '/work/rtm-review-283', target: '%34' });
+  reused.state.notifications[0].metadata.tmux.sourceProject = 'hl-trv-app';
+  assert.equal((await reused.jump()).reason, 'source_project_mismatch');
+  assert.equal(reused.state.notifications[0].read, false);
+});
+
 test('legacy targets without project metadata remain jumpable', async () => {
   const app = navigation({ project: null });
   assert.equal((await app.jump()).success, true);

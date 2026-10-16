@@ -228,6 +228,26 @@ test('ntfy delivery deduplicates per subscription without coalescing events for 
   assert.equal(state.notifications[0].metadata.tmux.target, '%1');
 });
 
+test('ntfy preserves a separate terminal source after stripping custom fields in transit', () => {
+  const { client, state, notices } = loadClient();
+  const message = 'tmux: %34\ntmux-source: {"project":"hl-trv-app"}\n📂 rtm-review-283\n\nReview completed';
+  client.handleNotification({ id: 'ai', name: 'AI' }, { id: 'review', title: 'Codex update', message });
+  assert.equal(state.notifications[0].metadata.tmux.sourceProject, 'hl-trv-app');
+  assert.equal(state.notifications[0].metadata.project.name, 'rtm-review-283');
+  assert.equal(state.notifications[0].message, message);
+  assert.equal(notices[0].body, 'Review completed');
+  assert.equal(notices[0].subtitle, 'rtm-review-283');
+});
+
+test('malformed terminal source markers remain content and do not override project validation', () => {
+  for (const marker of ['not json', '{"project":"/work/source"}', '{"project":".."}', '{"project":42}', 'null']) {
+    const { client, state, notices } = loadClient();
+    client.handleNotification({ id: 'ai', name: 'AI' }, { id: 'review', message: `tmux: %34\ntmux-source: ${marker}\nDone` });
+    assert.equal(state.notifications[0].metadata.tmux.sourceProject, undefined);
+    assert.match(notices[0].body, /tmux-source:/);
+  }
+});
+
 test('ntfy stream reconstructs split UTF-8 JSON, processes final lines and reconnects on EOF', async () => {
   const content = [
     { event: 'open' },

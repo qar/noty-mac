@@ -54,7 +54,7 @@ export interface AppNotification {
   read: boolean;
   completedAt?: number | null;
   metadata?: {
-    tmux?: { target: string; session?: string };
+    tmux?: { target: string; session?: string; sourceProject?: string };
     project?: { name: string; branch?: string };
     chainTestApp?: string;
     plane?: PlaneEvent;

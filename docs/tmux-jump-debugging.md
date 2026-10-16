@@ -275,6 +275,23 @@ tail -f /tmp/noty-mac-debug.log | grep '\[jump\]\|\[ipc\]'
 
 ## 历史教训
 
+### 2026-10-16: 临时审查目录的通知丢失终端来源
+
+Codex 可以在 `hl-trv-app` 终端里审查另一个仓库，把命令的工作目录设为
+`rtm-review-283`。通知的 `cwd` 是实际处理项目，不能用它代替终端的启动目录。
+共享 app-server 继承的 `TMUX_PANE` 也可能属于其他终端。
+
+发送脚本通过 `CODEX_THREAD_ID` 找到对应 rollout，仅读取第一行 `session_meta`
+中的 `cwd`，按这个目录选择唯一的来源窗格。明确提供的 target 仍优先；多个
+Codex 共用目录时不猜测，也不回退到命令执行目录。
+
+消息保留原有项目行，并通过 `tmux-source: {"project":"hl-trv-app"}` 传输
+终端来源项目。接收端将它保存为 `metadata.tmux.sourceProject`，用于跳转前
+的项目校验；系统通知和提醒正文隐藏这行传输信息。旧通知仍沿用原有校验。
+
+缺少 target 的历史通知不能仅凭临时项目名恢复。修复历史记录前，必须核对
+发送会话、实际发送内容及仍在运行的终端，只补齐确认过的跳转元数据。
+
 ### 2026-04-13: 点击通知无法跳转
 
 **现象**: 在 tmux pane 中触发 Claude Code 通知，消息列表中点击通知没有任何反应。

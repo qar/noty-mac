@@ -85,7 +85,9 @@ async function openNotificationTarget(notification, options = {}) {
     }
   }
   const chainTestApp = options.chainTestApp || notification?.metadata?.chainTestApp || null;
-  return jumpToTmuxTarget(target, { chainTestApp, expectedProject: notification?.metadata?.project?.name, expectedCheckout: recovered?.checkout });
+  return jumpToTmuxTarget(target, { chainTestApp,
+    expectedProject: notification?.metadata?.tmux?.sourceProject || notification?.metadata?.project?.name,
+    expectedCheckout: recovered?.checkout });
 }
 
 async function readNotificationCheckout(target) {
@@ -753,6 +755,7 @@ function setupIPC() {
     const ids = notifications.filter(item => item.id === id || (notification.type !== 'plane' && target
       && relatedIds.has(item.id) && item.type !== 'plane' && item.channelId === notification.channelId
       && item.metadata?.project?.name === notification.metadata?.project?.name
+      && item.metadata?.tmux?.sourceProject === notification.metadata?.tmux?.sourceProject
       && resolveNotificationTmuxTarget(item) === target)).map(item => item.id);
     const result = await openNotificationTarget(notification, options);
     if (result.success) dismissNotifications(ids, true);
