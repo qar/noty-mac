@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Archive, BellPlus, ExternalLink, Inbox, RotateCcw, Settings, Terminal } from 'lucide-react';
+import { Archive, BellPlus, ExternalLink, Folder, GitBranch, Inbox, RotateCcw, Settings, Terminal } from 'lucide-react';
 import type { AppNotification, Channel } from '../main/notification-types';
 import { isPendingNotification, planeCommentPreview } from '../main/notification-core';
 import './renderer-api';
@@ -135,6 +135,8 @@ function Notifications() {
           : message.text;
         const title = plane ? item.title : item.title.replace(/\s*\([^)]*\)\s*$/, '');
         const target = plane ? item.metadata?.plane?.url : item.metadata?.tmux?.target;
+        const tmuxSession = item.metadata?.tmux?.session && !item.metadata.tmux.session.startsWith('%') ? item.metadata.tmux.session : '会话不可用';
+        const sourceName = source?.name || '已移除的通知来源';
         const dismissed = !isPendingNotification(item);
         const dismissLabel = dismissed ? '恢复提醒' : group.length > 1 ? '收起本组提醒' : '收起提醒';
         return <article key={item.id} id={`notification-${item.id}`} data-notification-id={item.id} tabIndex={-1} className={`notification-item ${dismissed ? 'read' : ''} ${item.id === selection.id ? 'is-selected' : ''}`}>
@@ -150,10 +152,16 @@ function Notifications() {
               <button className="icon-btn" disabled={Boolean(busy)} title={dismissLabel} aria-label={`${dismissLabel}：${title}`} onClick={() => void perform(item.id, () => window.api.setNotificationsDismissed(group.map(entry => entry.id), !dismissed))}>{dismissed ? <RotateCcw /> : <Archive />}</button>
             </div>
           </div>
-          {project ? <div className="notification-session-title">{project.name}{project.branch ? ` (${project.branch})` : ''}</div> : null}
-          {!plane && target ? <div className="notification-tmux-target" title={`tmux: ${target}`}>
-            <Terminal size={14} aria-hidden="true" />
-            <span>{item.metadata?.tmux?.session && !item.metadata.tmux.session.startsWith('%') ? item.metadata.tmux.session : '会话不可用'}</span>
+          {project || (!plane && target) ? <div className="notification-context">
+            {project ? <div className="notification-context-item notification-project" role="group" aria-label={`项目：${project.name}`} title={`项目：${project.name}`}>
+              <Folder size={14} aria-hidden="true" /><span>{project.name}</span>
+            </div> : null}
+            {project?.branch ? <div className="notification-context-item" role="group" aria-label={`Git 分支：${project.branch}`} title={`Git 分支：${project.branch}`}>
+              <GitBranch size={14} aria-hidden="true" /><span>{project.branch}</span>
+            </div> : null}
+            {!plane && target ? <div className="notification-context-item notification-tmux-target" role="group" aria-label={`Tmux 会话：${tmuxSession}`} title={`Tmux 会话：${tmuxSession}\ntmux: ${target}`}>
+              <Terminal size={14} aria-hidden="true" /><span>{tmuxSession}</span>
+            </div> : null}
           </div> : null}
           {item.metadata?.plane?.attachment?.status === 'error' ? <div className="notification-error" role="status">
             {item.metadata.plane.attachment.error}
@@ -164,9 +172,9 @@ function Notifications() {
             <summary>{message.isJson ? '原始 JSON' : '原始内容'}</summary>
             <pre className="notification-message">{message.text}</pre>
           </details> : null}
-          <div className="notification-bottom">
-            <span className="notification-channel">{source?.name || '已移除的通知来源'}</span>
-          </div>
+          {sourceName !== title ? <div className="notification-bottom">
+            <span className="notification-channel">{sourceName}</span>
+          </div> : null}
           {plane && !target ? <div className="notification-warning">缺少任务链接</div> : null}
         </article>;
       })}
@@ -179,10 +187,17 @@ function formatMessage(item: AppNotification): { text: string; isJson: boolean }
   try {
     return { text: JSON.stringify(JSON.parse(raw), null, 2), isJson: true };
   } catch {
-    const text = item.type !== 'plane' && item.metadata?.tmux?.target
-      ? raw.split('\n').filter(line => !/^\s*(?:🖥\s*)?tmux\s*:\s*[A-Za-z0-9_.:%@+/-]+\s*$/i.test(line)).join('\n').trimStart()
-      : raw;
-    return { text, isJson: false };
+    if (item.type === 'plane') return { text: raw, isJson: false };
+    const project = item.metadata?.project;
+    let removedContext = false;
+    const text = raw.split('\n').filter(line => {
+      const projectLine = line.match(/^\s*📂\s+([^\s(]+)(?:\s*\(([^)]+)\))?\s*$/);
+      const contextLine = (item.metadata?.tmux?.target && /^\s*(?:🖥\s*)?tmux\s*:\s*[A-Za-z0-9_.:%@+/-]+\s*$/i.test(line))
+        || (project && projectLine && projectLine[1] === project.name && (projectLine[2] || '') === (project.branch || ''));
+      if (contextLine) removedContext = true;
+      return !contextLine;
+    }).join('\n');
+    return { text: removedContext ? text.trimStart() : raw, isJson: false };
   }
 }
 

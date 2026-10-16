@@ -146,6 +146,8 @@ cat ~/Library/Application\ Support/noty-mac/config.json | \
 
 通知卡片使用会话名称（如 `hl-sensor`）展示 tmux 目标，悬停可查看底层 pane ID。读取列表时通过一次 `list-panes` 查询补全名称，不修改已保存的原文、跳转目标或提醒状态。没有可用名称时显示「会话不可用」，正文中的 tmux 目标行仅在显示时隐藏。
 
+项目、Git 分支和 tmux 会话分别使用文件夹、分支和终端图标，悬停显示字段含义。正文中与解析结果完全一致的项目行不再重复展示；来源名称与消息标题相同时也只显示一次。原始存储内容保持完整。
+
 点击时检查两个条件 (满足任一即触发跳转):
 ```javascript
 const hasTmuxTarget = !!notification?.metadata?.tmux?.target;
