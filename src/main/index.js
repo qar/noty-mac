@@ -70,7 +70,7 @@ async function openNotificationTarget(notification, options = {}) {
   const target = resolveNotificationTmuxTarget(notification);
   if (!target) return { success: false, reason: 'no_target' };
   const chainTestApp = options.chainTestApp || notification?.metadata?.chainTestApp || null;
-  return jumpToTmuxTarget(target, { chainTestApp });
+  return jumpToTmuxTarget(target, { chainTestApp, expectedProject: notification?.metadata?.project?.name });
 }
 
 function publicChannels() {
@@ -263,6 +263,18 @@ async function jumpToTmuxTarget(target, options = {}) {
     : null;
 
   try {
+    if (options.expectedProject) {
+      const panePath = await execTmux(['display-message', '-p', '-t', target, '#{pane_current_path}']);
+      const projectRoot = await new Promise(resolve => {
+        execFile('/usr/bin/git', ['-C', panePath, 'rev-parse', '--show-toplevel'], { timeout: 5000 }, (error, stdout) => {
+          resolve(error ? null : stdout.trim());
+        });
+      });
+      if (!projectRoot) return { success: false, reason: 'source_project_unverified' };
+      if (path.basename(projectRoot) !== options.expectedProject) {
+        return { success: false, reason: 'source_project_mismatch' };
+      }
+    }
     const session = await execTmux(['display-message', '-p', '-t', target, '#S']);
     const windowTarget = await execTmux(['display-message', '-p', '-t', target, '#S:#I']);
 
@@ -690,6 +702,7 @@ function setupIPC() {
     const target = resolveNotificationTmuxTarget(notification);
     const ids = notifications.filter(item => item.id === id || (notification.type !== 'plane' && target
       && relatedIds.has(item.id) && item.type !== 'plane' && item.channelId === notification.channelId
+      && item.metadata?.project?.name === notification.metadata?.project?.name
       && resolveNotificationTmuxTarget(item) === target)).map(item => item.id);
     const result = await openNotificationTarget(notification, options);
     if (result.success) dismissNotifications(ids, true);

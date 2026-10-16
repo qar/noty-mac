@@ -52,35 +52,35 @@ TMUX_TARGET="$(echo "$INPUT" | jq -r '.tmux.target // .metadata.tmux.target // .
 TMUX_SESSION="$(echo "$INPUT" | jq -r '.tmux.session // .metadata.tmux.session // .tmux_session // empty')"
 TMUX_WINDOW="$(echo "$INPUT" | jq -r '.tmux.window // .metadata.tmux.window // .tmux_window // empty')"
 TMUX_PANE="$(echo "$INPUT" | jq -r '.tmux.pane // .metadata.tmux.pane // .tmux_pane // empty')"
-if [ -z "$SOURCE_TMUX_PANE" ]; then
-  SOURCE_TMUX_PANE="$TMUX_PANE"
-fi
-
 if [ -z "$TMUX_TARGET" ] && [ -n "$TMUX_SESSION" ] && [ -n "$TMUX_WINDOW" ] && [ -n "$TMUX_PANE" ]; then
   TMUX_TARGET="${TMUX_SESSION}:${TMUX_WINDOW}.${TMUX_PANE}"
 fi
 
-if [ -z "$TMUX_TARGET" ] && [ -n "$SOURCE_TMUX_PANE" ] && command -v tmux >/dev/null 2>&1; then
-  TMUX_TARGET="$SOURCE_TMUX_PANE"
-  TMUX_SESSION="$(tmux display-message -p -t "$SOURCE_TMUX_PANE" '#S' 2>/dev/null || true)"
-  TMUX_WINDOW="$(tmux display-message -p -t "$SOURCE_TMUX_PANE" '#I' 2>/dev/null || true)"
-  TMUX_PANE="$(tmux display-message -p -t "$SOURCE_TMUX_PANE" '#P' 2>/dev/null || true)"
+if [ -z "$TMUX_TARGET" ] && [[ "$TMUX_PANE" =~ ^%[0-9]+$ ]]; then
+  TMUX_TARGET="$TMUX_PANE"
 fi
 
 if [ -z "$TMUX_TARGET" ] && command -v tmux >/dev/null 2>&1; then
-  if [ -n "${TMUX:-}" ]; then
-    TMUX_TARGET="$(tmux display-message -p '#{pane_id}' 2>/dev/null || true)"
-    TMUX_SESSION="$(tmux display-message -p '#S' 2>/dev/null || true)"
-    TMUX_WINDOW="$(tmux display-message -p '#I' 2>/dev/null || true)"
-    TMUX_PANE="$(tmux display-message -p '#P' 2>/dev/null || true)"
-  else
-    ACTIVE_CLIENT="$(tmux list-clients -F '#{client_activity}	#{client_name}' 2>/dev/null | sort -nr | awk 'NR==1 {print $2}')"
-    if [ -n "$ACTIVE_CLIENT" ]; then
-      TMUX_TARGET="$(tmux display-message -p -c "$ACTIVE_CLIENT" '#{pane_id}' 2>/dev/null || true)"
-      TMUX_SESSION="$(tmux display-message -p -c "$ACTIVE_CLIENT" '#S' 2>/dev/null || true)"
-      TMUX_WINDOW="$(tmux display-message -p -c "$ACTIVE_CLIENT" '#I' 2>/dev/null || true)"
-      TMUX_PANE="$(tmux display-message -p -c "$ACTIVE_CLIENT" '#P' 2>/dev/null || true)"
-    fi
+  SOURCE_CWD="${CWD:-$PWD}"
+  SOURCE_CWD="$(cd "$SOURCE_CWD" 2>/dev/null && pwd -P || printf '%s' "$SOURCE_CWD")"
+  SOURCE_ROOT="$(git -C "$SOURCE_CWD" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$SOURCE_CWD")"
+  # Shared agent daemons can retain another terminal's TMUX_PANE. Validate it
+  # against this notification's checkout; never use the currently active pane.
+  PANE_SNAPSHOT="$(LC_ALL=en_US.UTF-8 tmux list-panes -a -F $'#{pane_id}\t#{pane_current_path}' 2>/dev/null || true)"
+  TMUX_TARGET="$(printf '%s' "$PANE_SNAPSHOT" | jq -Rrs \
+    --arg cwd "$SOURCE_CWD" --arg root "$SOURCE_ROOT" --arg inherited "$SOURCE_TMUX_PANE" \
+    --arg codexThread "${CODEX_THREAD_ID:-}" '
+    [split("\n")[] | split("\t") | select(length == 2 and (.[0] | test("^%[0-9]+$")))
+      | {id: .[0], path: .[1]} | select(.path == $root or (.path | startswith($root + "/")))] as $project
+    | [$project[] | select(.path == $cwd)] as $exact
+    | (if ($exact | length) > 0 then $exact else $project end) as $matches
+    | if $codexThread == "" and any($project[]; .id == $inherited) then $inherited
+      elif ($matches | length) == 1 then $matches[0].id
+      else empty end')"
+  if [ -n "$TMUX_TARGET" ]; then
+    TMUX_SESSION="$(tmux display-message -p -t "$TMUX_TARGET" '#S' 2>/dev/null || true)"
+    TMUX_WINDOW="$(tmux display-message -p -t "$TMUX_TARGET" '#I' 2>/dev/null || true)"
+    TMUX_PANE="$(tmux display-message -p -t "$TMUX_TARGET" '#P' 2>/dev/null || true)"
   fi
 fi
 

@@ -36,9 +36,11 @@
 
 1. 输入 JSON 中的 `.tmux.target` / `.metadata.tmux.target`
 2. 输入 JSON 中的 `.tmux.session` + `.tmux.window` + `.tmux.pane` 拼接
-3. `$TMUX_PANE` 环境变量 (tmux 为每个 pane 的进程自动设置，**最准确**)
-4. `$TMUX` 环境变量 + `tmux display-message` 获取当前活跃 pane
-5. 无 `$TMUX` 时，查找最近活跃的 tmux client
+3. 输入 JSON 中单独指定的 `.tmux.pane`，如 `%42`
+4. 普通终端 hook 的 `$TMUX_PANE`，但必须确认该 pane 的目录属于通知 `cwd` 对应的仓库
+5. 按通知 `cwd` 查找唯一匹配的 pane；优先精确目录，其次同一仓库内的目录
+
+共享 Codex 后台进程可能让多个会话继承同一个 `$TMUX_PANE`。存在 `CODEX_THREAD_ID` 时，不直接信任这个环境变量，只使用明确传入的目标或唯一匹配的目录。同一目录有多个候选 pane 时，消息仍会发送，但不附加猜测的目标；调用方可通过 `.tmux.target` 传入已知来源。脚本不会回退到当前活跃 pane 或最近活跃 client。
 
 **关键**: 脚本会把 tmux target 嵌入消息体 (`🖥 tmux: <target>`)，这是数据传递的**唯一可靠通道**。
 
@@ -58,7 +60,7 @@ echo '{"title":"Test","message":"hello"}' | bash -x ~/.config/noty/ntfy-notify.s
 | 现象 | 原因 | 解决 |
 |------|------|------|
 | `TMUX_TARGET` 为空 | Hook 进程未继承 `$TMUX` / `$TMUX_PANE` | 确认 Claude Code 在 tmux 内运行 |
-| `TMUX_TARGET` 指向错误 pane | 使用了 `display-message -p` (获取活跃 pane) 而非 `$TMUX_PANE` | 确认使用最新版 `ntfy-notify.example.sh` |
+| 不同项目都指向同一个 pane | 共享后台进程继承了固定的 `$TMUX_PANE`，或旧脚本回退到了活跃 pane | 更新发送脚本并核对 `cwd` 与 pane 目录；不要只检查环境变量是否非空 |
 
 ### 环节 2: ntfy.sh 服务器 — 字段丢失 (核心陷阱)
 
@@ -140,7 +142,7 @@ cat ~/Library/Application\ Support/noty-mac/config.json | \
 
 ### 环节 4: Renderer — 点击判断
 
-**文件**: `src/renderer/app.js` — 第 76-102 行
+**文件**: `src/renderer/notifications.tsx`
 
 点击时检查两个条件 (满足任一即触发跳转):
 ```javascript
@@ -148,7 +150,7 @@ const hasTmuxTarget = !!notification?.metadata?.tmux?.target;
 const hasTmuxLine = /^\s*(?:🖥\s*)?tmux\s*:\s*([A-Za-z0-9_.:%@+/-]+)\s*$/im.test(notification?.message || '');
 ```
 
-如果两个条件都不满足，点击只会标记已读，不触发跳转。
+没有目标时不跳转、不收起。跳转成功后自动收起到历史，失败时保留提醒。相同 target 但来自不同项目的消息不会合并，也不会被同一次跳转一并收起。
 
 #### 调试方法
 
@@ -164,6 +166,8 @@ Failed to jump tmux target: <reason>
 **文件**: `src/main/index.js` — `jumpToTmuxTarget(target, options)`
 
 执行步骤:
+
+通知带有项目名时，跳转前先读取目标 pane 的当前目录及 Git 仓库名。项目不符或无法核实时返回错误，避免旧的错误 target 把用户带到另一个项目，也避免自动收起这条提醒。旧消息只保存了错误的 pane ID、没有真实来源，无法据此还原具体发送 pane；此校验不会改写原文或猜测历史来源。
 
 ```
 1. isValidTmuxTarget(target)         验证 target 格式
@@ -201,6 +205,8 @@ tmux select-pane -t '%42'
 |--------|------|----------|
 | `no_target` | 通知中没有 tmux target | 检查环节 3 |
 | `invalid_target` | target 格式不合法 | 检查 target 字符串 |
+| `source_project_mismatch` | 记录的目标属于其他项目 | 检查发送端是否继承了错误的 pane；旧消息保留原文 |
+| `source_project_unverified` | 无法核实目标的 Git 仓库 | 检查 pane 当前目录是否仍为原仓库 |
 | `no_attached_client` | 没有 Kitty 终端连接 tmux | 确认 Kitty 正在运行且 attach 了 tmux |
 | `tmux_not_found` | 找不到 tmux 二进制 | 检查 PATH |
 | `kitty_unavailable` | Kitty 应用未安装 | — |
@@ -257,7 +263,7 @@ tail -f /tmp/noty-mac-debug.log | grep '\[jump\]\|\[ipc\]'
 | `scripts/ntfy-notify.example.sh` | 通知脚本源码 (最新版) |
 | `src/main/index.js` | 跳转逻辑 (`jumpToTmuxTarget`) |
 | `src/main/ntfy-client.js` | 通知接收 + metadata 解析 (`normalizeTmuxMetadata`) |
-| `src/renderer/app.js` | 点击事件处理 |
+| `src/renderer/notifications.tsx` | 点击事件处理 |
 | `src/preload.js` | IPC 桥接 |
 | `src/main/store.js` | 数据存储 schema |
 | `~/Library/Application Support/noty-mac/config.json` | 运行时数据 (通知列表) |

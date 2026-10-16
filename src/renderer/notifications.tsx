@@ -14,6 +14,7 @@ function groupNotifications(items: AppNotification[], selectedId: string | null)
     const target = item.id !== selectedId && item.type !== 'plane' && item.metadata?.tmux?.target;
     if (target && previous?.[0].type !== 'plane' && previous?.[0].channelId === item.channelId
       && previous?.[0].id !== selectedId
+      && previous?.[0].metadata?.project?.name === item.metadata?.project?.name
       && previous?.[0].metadata?.tmux?.target === target) previous.push(item);
     else groups.push([item]);
   }
@@ -92,7 +93,11 @@ function Notifications() {
         || /^\s*(?:🖥\s*)?tmux\s*:/im.test(item.message);
       if (hasTarget) {
         const result = await window.api.jumpToNotificationTarget(item.id, { notificationIds: group.map(entry => entry.id) });
-        if (!result.success) throw new Error(item.type === 'plane' ? result.reason : '无法跳转到 tmux，请确认会话仍在运行');
+        if (!result.success) {
+          if (result.reason === 'source_project_mismatch') throw new Error('这条提醒记录的 pane 属于其他项目，无法确定原始来源');
+          if (result.reason === 'source_project_unverified') throw new Error('无法确认这条提醒的来源项目，请检查目标 pane');
+          throw new Error(item.type === 'plane' ? result.reason : '无法跳转到 tmux，请确认会话仍在运行');
+        }
       }
     });
   };
