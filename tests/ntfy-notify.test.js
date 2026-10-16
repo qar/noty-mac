@@ -72,6 +72,20 @@ test('ambiguous shared-daemon sources never guess a pane, even within the same c
   }
 });
 
+test('a unique Codex pane remains routable beside ordinary shells in the same checkout', () => {
+  const candidates = [...panes,
+    { ...panes[1], pane_id: '%89', pane_current_path: '/work/hl-test-reports', pane_current_command: 'codex' },
+    { ...panes[1], pane_id: '%90', pane_current_path: '/work/hl-test-reports', pane_current_command: 'zsh' },
+  ];
+  const payload = publish({ cwd: '/work/hl-test-reports', title: 'Codex update' }, { panes: candidates });
+  assert.equal(payload.tmux?.target, '%89');
+  assert.match(payload.message, /tmux: %89/);
+  for (const command of ['codex', 'node', '']) {
+    candidates[3].pane_current_command = command;
+    assert.equal(publish({ cwd: '/work/hl-test-reports' }, { panes: candidates }).tmux, undefined);
+  }
+});
+
 test('direct terminal hooks preserve their matching pane even with multiple project panes', () => {
   const duplicate = [...panes, { ...panes[1], pane_id: '%49' }];
   assert.equal(publish({ cwd: '/work/noty-mac' }, { panes: duplicate, pane: '%49', codexThread: '' }).tmux.target, '%49');

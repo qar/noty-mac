@@ -66,16 +66,21 @@ if [ -z "$TMUX_TARGET" ] && command -v tmux >/dev/null 2>&1; then
   SOURCE_ROOT="$(git -C "$SOURCE_CWD" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$SOURCE_CWD")"
   # Shared agent daemons can retain another terminal's TMUX_PANE. Validate it
   # against this notification's checkout; never use the currently active pane.
-  PANE_SNAPSHOT="$(LC_ALL=en_US.UTF-8 tmux list-panes -a -F $'#{pane_id}\t#{pane_current_path}' 2>/dev/null || true)"
+  # A unique foreground Codex can be distinguished from sibling idle shells;
+  # another agent or an unknown command remains ambiguous.
+  PANE_SNAPSHOT="$(LC_ALL=en_US.UTF-8 tmux list-panes -a -F $'#{pane_id}\t#{pane_current_path}\t#{pane_current_command}' 2>/dev/null || true)"
   TMUX_TARGET="$(printf '%s' "$PANE_SNAPSHOT" | jq -Rrs \
     --arg cwd "$SOURCE_CWD" --arg root "$SOURCE_ROOT" --arg inherited "$SOURCE_TMUX_PANE" \
     --arg codexThread "${CODEX_THREAD_ID:-}" '
-    [split("\n")[] | split("\t") | select(length == 2 and (.[0] | test("^%[0-9]+$")))
-      | {id: .[0], path: .[1]} | select(.path == $root or (.path | startswith($root + "/")))] as $project
+    [split("\n")[] | split("\t") | select(length == 3 and (.[0] | test("^%[0-9]+$")))
+      | {id: .[0], path: .[1], command: .[2]} | select(.path == $root or (.path | startswith($root + "/")))] as $project
     | [$project[] | select(.path == $cwd)] as $exact
     | (if ($exact | length) > 0 then $exact else $project end) as $matches
+    | [$matches[] | select(.command == "codex")] as $codex
     | if $codexThread == "" and any($project[]; .id == $inherited) then $inherited
       elif ($matches | length) == 1 then $matches[0].id
+      elif $codexThread != "" and ($codex | length) == 1
+        and all($matches[]; .command == "codex" or (.command | test("^(bash|zsh|sh|fish|dash|ksh|nu)$"))) then $codex[0].id
       else empty end')"
   if [ -n "$TMUX_TARGET" ]; then
     TMUX_SESSION="$(tmux display-message -p -t "$TMUX_TARGET" '#S' 2>/dev/null || true)"

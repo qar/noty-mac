@@ -16,10 +16,13 @@ const { registerLocalAiIpc } = require('./ipc-local-ai');
 const { registerSettingsIpc } = require('./ipc-settings');
 const { registerProjectsIpc } = require('./ipc-projects');
 const { registerWorkflowIpc } = require('./ipc-workflow');
+const { recoverNotificationTarget } = require('./tmux-notification-target');
 const { setDockIcon } = require('./app-icon');
 const {
   TMUX_SESSION_SNAPSHOT_FORMAT,
-  parseTmuxSessionSnapshots
+  parseTmuxSessionSnapshots,
+  TMUX_PANE_SNAPSHOT_FORMAT,
+  parseTmuxPaneSnapshots,
 } = require('./tmux-workspace');
 
 function generateId() {
@@ -67,10 +70,33 @@ async function openNotificationTarget(notification, options = {}) {
       return { success: false, reason: '无法打开浏览器，请重试' };
     }
   }
-  const target = resolveNotificationTmuxTarget(notification);
-  if (!target) return { success: false, reason: 'no_target' };
+  let target = resolveNotificationTmuxTarget(notification);
+  let recovered;
+  if (!target) {
+    try {
+      const [snapshot, processes] = await Promise.all([
+        execTmux(['list-panes', '-a', '-F', TMUX_PANE_SNAPSHOT_FORMAT]), listProcesses(),
+      ]);
+      recovered = await recoverNotificationTarget(notification, parseTmuxPaneSnapshots(snapshot), processes, readNotificationCheckout);
+      if (!recovered.target) return { success: false, reason: recovered.reason };
+      target = recovered.target;
+    } catch {
+      return { success: false, reason: 'source_unavailable' };
+    }
+  }
   const chainTestApp = options.chainTestApp || notification?.metadata?.chainTestApp || null;
-  return jumpToTmuxTarget(target, { chainTestApp, expectedProject: notification?.metadata?.project?.name });
+  return jumpToTmuxTarget(target, { chainTestApp, expectedProject: notification?.metadata?.project?.name, expectedCheckout: recovered?.checkout });
+}
+
+async function readNotificationCheckout(target) {
+  const panePath = await execTmux(['display-message', '-p', '-t', target, '#{pane_current_path}']);
+  const git = (args) => new Promise(resolve => {
+    execFile('/usr/bin/git', ['-C', panePath, ...args], { timeout: 5000 }, (error, stdout) => resolve(error ? null : stdout.trim()));
+  });
+  const root = await git(['rev-parse', '--show-toplevel']);
+  if (!root) return null;
+  const branch = await git(['branch', '--show-current']);
+  return branch === null ? null : { root, branch };
 }
 
 function publicChannels() {
@@ -264,6 +290,12 @@ async function jumpToTmuxTarget(target, options = {}) {
     : null;
 
   try {
+    if (options.expectedCheckout) {
+      const current = await readNotificationCheckout(target);
+      if (!current || current.root !== options.expectedCheckout.root || current.branch !== options.expectedCheckout.branch) {
+        return { success: false, reason: 'source_project_unverified' };
+      }
+    }
     if (options.expectedProject) {
       const panePath = await execTmux(['display-message', '-p', '-t', target, '#{pane_current_path}']);
       const projectRoot = await new Promise(resolve => {
