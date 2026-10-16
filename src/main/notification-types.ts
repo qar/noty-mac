@@ -5,6 +5,7 @@ export interface ChannelOptions {
   planeBaseUrl?: string;
   planeWorkspaceSlug?: string;
   accessToken?: string;
+  planeApiKey?: string;
 }
 
 export interface Channel extends ChannelOptions {
@@ -13,6 +14,8 @@ export interface Channel extends ChannelOptions {
   url: string;
   encryptedAccessToken?: string;
   hasAccessToken?: boolean;
+  encryptedPlaneApiKey?: string;
+  hasPlaneApiKey?: boolean;
 }
 
 export interface PlaneEvent {
@@ -33,6 +36,10 @@ export interface PlaneEvent {
   workspaceSlug: string;
   url: string | null;
   rawPayload: string;
+  issueIdentifier?: string;
+  issueName?: string;
+  commentAuthor?: string;
+  commentCreatedAt?: string;
   parseError?: string;
 }
 

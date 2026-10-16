@@ -92,6 +92,7 @@ export interface AppApi {
   getChannels(): Promise<Channel[]>;
   addChannel(name: string, url: string, options?: ChannelOptions): Promise<Channel[]>;
   removeChannel(id: string): Promise<Channel[]>;
+  setPlaneApiKey(id: string, apiKey: string): Promise<Channel[]>;
   getNotifications(): Promise<AppNotification[]>;
   getSelectedNotification(): Promise<string | null>;
   retryNotificationAttachment(id: string): Promise<void>;

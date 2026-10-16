@@ -2,8 +2,9 @@ const { EventEmitter } = require('events');
 const { Notification, safeStorage } = require('electron');
 const store = require('./store');
 const crypto = require('crypto');
-const { normalizePlaneNotification, retainNotifications, planeCommentPreview } = require('./notification-core');
+const { normalizePlaneNotification, retainNotifications, planeCommentPreview, hydratePlaneNotifications, planeNotificationTitle } = require('./notification-core');
 const { readPlaneAttachment } = require('./plane-attachment');
+const { PlaneDetailsClient, migratePlaneCredentials } = require('./plane-details');
 
 function accessToken(channel) {
   return channel.encryptedAccessToken
@@ -143,6 +144,60 @@ class NtfyClient extends EventEmitter {
     this.connections = new Map(); // channelId -> EventSource
     this.reconnectTimers = new Map();
     this.systemNotifications = new Map();
+    this.planeDetails = new PlaneDetailsClient(fetch);
+    this.planeDetailsQueue = Promise.resolve();
+    this.planeDetailsPending = new Set();
+    this.planeDetailsAttempts = new Map();
+  }
+
+  refreshPlaneNotifications() {
+    const channels = store.get('channels');
+    const before = store.get('notifications');
+    const items = hydratePlaneNotifications(before, channels);
+    if (JSON.stringify(before) !== JSON.stringify(items)) {
+      store.set('notifications', items);
+      this.emit('notification-updated');
+    }
+    for (const item of items) {
+      const plane = item.metadata?.plane;
+      const channel = channels.find(source => source.id === item.channelId);
+      if (!plane?.issueId || !plane.projectId || (plane.issueIdentifier && plane.issueName)
+        || !channel?.encryptedPlaneApiKey) continue;
+      const key = JSON.stringify([channel.id, plane.workspaceSlug, plane.projectId, plane.issueId]);
+      if (this.planeDetailsPending.has(key) || Date.now() - (this.planeDetailsAttempts.get(key) || 0) < 60000) continue;
+      this.planeDetailsPending.add(key);
+      // Serialize lookups to avoid bursting the Plane API when replaying history.
+      this.planeDetailsQueue = this.planeDetailsQueue.then(async () => {
+        const currentChannel = store.get('channels').find(source => source.id === channel.id);
+        if (!currentChannel?.encryptedPlaneApiKey) return;
+        this.planeDetailsAttempts.set(key, Date.now());
+        const apiKey = safeStorage.decryptString(Buffer.from(currentChannel.encryptedPlaneApiKey, 'base64'));
+        const details = await this.planeDetails.read(currentChannel, plane, apiKey);
+        if (!details.issueName && !details.issueIdentifier) return;
+        // Read fresh state after I/O so navigation/dismissal during lookup is preserved.
+        const latest = store.get('notifications').map(entry => {
+          const previous = entry.metadata?.plane;
+          if (entry.channelId !== channel.id || previous?.issueId !== plane.issueId
+            || previous.projectId !== plane.projectId || previous.workspaceSlug !== plane.workspaceSlug) return entry;
+          const metadata = { ...previous,
+            issueIdentifier: previous.issueIdentifier || details.issueIdentifier,
+            issueName: previous.issueName || details.issueName,
+          };
+          return { ...entry, title: planeNotificationTitle(metadata, entry.title), metadata: { ...entry.metadata, plane: metadata } };
+        });
+        store.set('notifications', latest);
+        this.emit('notification-updated');
+      }).catch(() => {
+        // The original reminder remains usable offline or without API permission.
+      }).finally(() => this.planeDetailsPending.delete(key));
+    }
+    return items;
+  }
+
+  resetPlaneDetails() {
+    this.planeDetails = new PlaneDetailsClient(fetch);
+    this.planeDetailsAttempts.clear();
+    this.refreshPlaneNotifications();
   }
 
   subscribeToChannel(channel) {
@@ -306,6 +361,7 @@ class NtfyClient extends EventEmitter {
       Object.assign(existing, { title: plane.title, message: plane.message, metadata });
       store.set('notifications', notifications);
       this.emit('notification-updated', existing);
+      this.refreshPlaneNotifications();
       return;
     }
 
@@ -328,6 +384,7 @@ class NtfyClient extends EventEmitter {
 
     store.set('notifications', retainNotifications(notifications));
     this.emit('notification', notification);
+    if (plane) this.refreshPlaneNotifications();
 
     // 显示系统通知
     const settings = store.get('settings');
@@ -383,7 +440,9 @@ class NtfyClient extends EventEmitter {
   }
 
   subscribeToAllChannels() {
-    const channels = store.get('channels');
+    const channels = migratePlaneCredentials(store.get('channels'), store.get('planeConfig'));
+    store.set('channels', channels);
+    this.refreshPlaneNotifications();
     channels.forEach(channel => {
       this.subscribeToChannel(channel);
     });

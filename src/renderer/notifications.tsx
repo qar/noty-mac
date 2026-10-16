@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Archive, BellPlus, ExternalLink, Folder, GitBranch, Inbox, RotateCcw, Settings, Terminal } from 'lucide-react';
+import { Archive, BellPlus, Clock3, ExternalLink, Folder, GitBranch, Inbox, RotateCcw, Settings, Terminal, UserRound } from 'lucide-react';
 import type { AppNotification, Channel } from '../main/notification-types';
 import { isPendingNotification, planeCommentPreview } from '../main/notification-core';
 import './renderer-api';
@@ -130,6 +130,8 @@ function Notifications() {
         const project = item.metadata?.project;
         const message = formatMessage(item);
         const comment = plane ? planeCommentPreview(item.metadata?.plane?.rawPayload ?? item.message) : null;
+        const planeEvent = item.metadata?.plane;
+        const isComment = plane && planeEvent?.event === 'issue_comment';
         const body = plane
           ? comment ?? item.metadata?.plane?.parseError ?? item.message
           : message.text;
@@ -142,16 +144,28 @@ function Notifications() {
         return <article key={item.id} id={`notification-${item.id}`} data-notification-id={item.id} tabIndex={-1} className={`notification-item ${dismissed ? 'read' : ''} ${item.id === selection.id ? 'is-selected' : ''}`}>
           <div className="notification-header">
             <span className="notification-type">{plane ? 'RtiTek Plane' : 'Tmux AI agent'}{group.length > 1 ? <span className="notification-count">×{group.length}</span> : null}</span>
-            <time className="notification-time" dateTime={new Date(item.timestamp).toISOString()} title={new Date(item.timestamp).toLocaleString()}>{formatTime(item.timestamp)}</time>
+            <time className="notification-time" dateTime={new Date(item.timestamp).toISOString()} title={`收到于 ${new Date(item.timestamp).toLocaleString()}`}>{formatTime(item.timestamp)}</time>
           </div>
           <div className="notification-heading">
-            <button className="notification-open" disabled={Boolean(busy)} onClick={() => open(group)} aria-label={plane ? `打开任务：${title}` : title}>
-              <span className="notification-title">{title}{target ? <ExternalLink size={12} /> : null}</span>
+            <button className={`notification-open${plane ? ' notification-open-plane' : ''}`} title={title} disabled={Boolean(busy)} onClick={() => open(group)} aria-label={plane ? `打开任务：${title}` : title}>
+              {plane ? <><span className="notification-title">{title}</span>{target ? <ExternalLink size={12} aria-hidden="true" /> : null}</>
+                : <span className="notification-title">{title}{target ? <ExternalLink size={12} /> : null}</span>}
             </button>
             <div className="notification-item-actions">
               <button className="icon-btn" disabled={Boolean(busy)} title={dismissLabel} aria-label={`${dismissLabel}：${title}`} onClick={() => void perform(item.id, () => window.api.setNotificationsDismissed(group.map(entry => entry.id), !dismissed))}>{dismissed ? <RotateCcw /> : <Archive />}</button>
             </div>
           </div>
+          {isComment ? <div className="notification-comment-meta">
+            <span className="notification-comment-author" title={`评论作者：${planeEvent.commentAuthor || '未知作者'}`}>
+              <UserRound size={13} aria-hidden="true" /><span>{planeEvent.commentAuthor || '未知作者'}</span>
+            </span>
+            {planeEvent.commentCreatedAt ? <span className="notification-comment-time">
+              <Clock3 size={13} aria-hidden="true" />
+              <time dateTime={planeEvent.commentCreatedAt} title={`评论时间：${new Date(planeEvent.commentCreatedAt).toLocaleString()}`}>
+                {new Date(planeEvent.commentCreatedAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}
+              </time>
+            </span> : null}
+          </div> : null}
           {project || (!plane && target) ? <div className="notification-context">
             {project ? <div className="notification-context-item notification-project" role="group" aria-label={`项目：${project.name}`} title={`项目：${project.name}`}>
               <Folder size={14} aria-hidden="true" /><span>{project.name}</span>

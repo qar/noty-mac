@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const {
   channelFromInput, normalizePlaneNotification, planeCommentPreview, safeWebUrl,
+  hydratePlaneNotifications,
   isPendingNotification, retainNotifications, clearReadNotifications, setNotificationCompleted, setNotificationsDismissed,
 } = require('../dist/main/notification-core');
 
@@ -115,13 +116,100 @@ function loadClient(fetchImpl) {
     fetch: fetchImpl,
     setTimeout: callback => { const timer = { callback }; timers.push(timer); return timer; },
     clearTimeout: timer => { if (timer) timer.cleared = true; },
-    require: name => name === 'electron' ? { Notification } : name === './store' ? store
+    require: name => name === 'electron' ? { Notification, safeStorage: { decryptString: value => value.toString() } } : name === './store' ? store
       : name === './notification-core' ? require('../dist/main/notification-core')
-      : name === './plane-attachment' ? require('../dist/main/plane-attachment') : require(name),
+      : name === './plane-attachment' ? require('../dist/main/plane-attachment')
+      : name === './plane-details' ? require('../dist/main/plane-details') : require(name),
   };
   vm.runInNewContext(fs.readFileSync(require.resolve('../dist/main/ntfy-client'), 'utf8'), context);
   return { client: new context.module.exports(), state, timers, notices, nativeNotifications };
 }
+
+test('Plane comments expose task details, author and actual creation time separately from body', () => {
+  const raw = JSON.stringify({ event: 'issue_comment', action: 'created', data: {
+    id: 'comment', issue: { id: 'i', name: 'Long task title', sequence_id: 12, project: { id: 'p', identifier: 'APP' } },
+    project: 'p', created_at: '2026-10-15T07:34:59.131888Z', updated_at: '2026-10-16T08:00:00Z',
+    created_by: 'author', comment_html: '<p>Oct 16: quoted time in comment</p>',
+  }, activity: { actor: { id: 'author', display_name: 'Comment author' } } });
+  const item = normalizePlaneNotification(channel, raw);
+  assert.equal(item.title, 'APP-12 Long task title');
+  assert.equal(item.metadata.plane.commentAuthor, 'Comment author');
+  assert.equal(item.metadata.plane.commentCreatedAt, '2026-10-15T07:34:59.131Z');
+  assert.equal(item.metadata.plane.rawPayload, raw);
+  const edited = JSON.parse(raw);
+  edited.action = 'updated';
+  edited.activity.actor = { id: 'editor', display_name: 'Different editor' };
+  edited.data.created_at = 'invalid';
+  const result = normalizePlaneNotification(channel, JSON.stringify(edited));
+  assert.equal(result.metadata.plane.commentAuthor, undefined);
+  assert.equal(result.metadata.plane.commentCreatedAt, undefined);
+  edited.data.created_by = { id: 'author', first_name: 'Original', last_name: 'Author' };
+  assert.equal(normalizePlaneNotification(channel, JSON.stringify(edited)).metadata.plane.commentAuthor, 'Original Author');
+});
+
+test('historic Plane reminders hydrate task details without changing content, identity or dismissal', () => {
+  const raw = JSON.stringify({ event: 'issue_comment', data: { issue: 'i', project: 'p', created_at: '2026-10-15T07:34:59Z' }, activity: { actor: { display_name: 'Author' } } });
+  const old = { id: 'comment', type: 'plane', channelId: channel.id, title: 'Old fallback', message: 'Old summary', timestamp: 10, read: true, completedAt: 20,
+    metadata: { plane: { ...normalizePlaneNotification(channel, raw).metadata.plane, commentAuthor: undefined, commentCreatedAt: undefined } } };
+  const taskRaw = JSON.stringify({ event: 'issue', data: { id: 'i', project: { id: 'p', identifier: 'APP' }, sequence_id: 12, name: 'Task name' } });
+  const task = { ...old, id: 'task', timestamp: 15, ...normalizePlaneNotification(channel, taskRaw) };
+  const other = { ...old, id: 'other', channelId: 'another-source' };
+  const hydrated = hydratePlaneNotifications([old, task, other], [channel]);
+  assert.equal(hydrated[0].title, 'APP-12 Task name');
+  assert.equal(hydrated[0].metadata.plane.commentAuthor, 'Author');
+  assert.equal(hydrated[0].metadata.plane.commentCreatedAt, '2026-10-15T07:34:59.000Z');
+  assert.equal(hydrated[0].metadata.plane.rawPayload, raw);
+  for (const key of ['id', 'message', 'read', 'completedAt', 'timestamp']) assert.equal(hydrated[0][key], old[key]);
+  assert.notEqual(hydrated[2].title, hydrated[0].title);
+  assert.deepEqual(hydratePlaneNotifications(hydrated, [channel]), hydrated);
+  const removedSource = { ...old, metadata: { plane: { ...old.metadata.plane, workspaceSlug: 'removed-team' } } };
+  assert.equal(hydratePlaneNotifications([removedSource], [])[0].metadata.plane.workspaceSlug, 'removed-team');
+});
+
+test('background Plane lookups deduplicate tasks and preserve dismissal performed during I/O', async () => {
+  let resolveIssue;
+  const calls = [];
+  const { client, state } = loadClient(async (url, options) => {
+    calls.push({ url, options });
+    if (url.endsWith('/issues/issue-1/')) return new Promise(resolve => { resolveIssue = resolve; });
+    return Response.json({ identifier: 'APP' });
+  });
+  const source = { ...channel, planeWorkspaceSlug: 'rtitek', encryptedPlaneApiKey: Buffer.from('test-plane-key').toString('base64') };
+  state.channels = [source];
+  const raw = JSON.stringify({ event: 'issue_comment', workspace_slug: 'rtitek', data: { issue: 'issue-1', project: 'project-1' } });
+  client.handleNotification(source, { id: 'one', message: raw });
+  client.handleNotification(source, { id: 'two', message: raw });
+  await new Promise(resolve => setImmediate(resolve));
+  state.notifications[0].read = true;
+  state.notifications[0].completedAt = 123;
+  resolveIssue(Response.json({ name: 'Task from API', sequence_id: 12 }));
+  await client.planeDetailsQueue;
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].options.headers['X-API-Key'], 'test-plane-key');
+  for (const item of state.notifications) {
+    assert.equal(item.title, 'APP-12 Task from API');
+    assert.equal(item.metadata.plane.rawPayload, raw);
+  }
+  assert.equal(state.notifications[0].completedAt, 123);
+  assert.equal(state.notifications[1].completedAt, null);
+  client.refreshPlaneNotifications();
+  await client.planeDetailsQueue;
+  assert.equal(calls.length, 2);
+});
+
+test('unavailable Plane API keeps reminders and backs off retries', async () => {
+  let calls = 0;
+  const { client, state } = loadClient(async () => { calls++; return new Response('', { status: 403 }); });
+  const source = { ...channel, encryptedPlaneApiKey: Buffer.from('test-key').toString('base64') };
+  state.channels = [source];
+  client.handleNotification(source, { id: 'one', message: JSON.stringify(payload) });
+  await client.planeDetailsQueue;
+  client.refreshPlaneNotifications();
+  await client.planeDetailsQueue;
+  assert.equal(calls, 1);
+  assert.equal(state.notifications[0].read, false);
+  assert.equal(state.notifications[0].title, payload.data.name);
+});
 
 test('ntfy delivery deduplicates per subscription without coalescing events for the same task', () => {
   const { client, state, notices } = loadClient();

@@ -41,6 +41,29 @@ function id(value: unknown): string {
   return text(value) || text(record(value).id);
 }
 
+export function planeIssueDetails(value: unknown, projectValue?: unknown): { issueIdentifier?: string; issueName?: string } {
+  const issue = record(value);
+  const project = record(projectValue ?? issue.project);
+  const sequence = issue.sequence_id;
+  const projectIdentifier = text(project.identifier);
+  const identifier = text(issue.identifier);
+  const issueIdentifier = projectIdentifier && /^\d+$/.test(String(sequence))
+    ? `${projectIdentifier}-${sequence}` : /^[\w-]+-\d+$/.test(identifier) ? identifier : '';
+  return {
+    ...(issueIdentifier ? { issueIdentifier } : {}),
+    ...(text(issue.name) ? { issueName: text(issue.name) } : {}),
+  };
+}
+
+export function planeNotificationTitle(plane: Pick<PlaneEvent, 'issueIdentifier' | 'issueName'>, fallback: string): string {
+  return [plane.issueIdentifier, plane.issueName].filter(Boolean).join(' ') || fallback;
+}
+
+function personName(value: unknown): string {
+  const person = record(value);
+  return text(person.display_name) || [text(person.first_name), text(person.last_name)].filter(Boolean).join(' ') || text(person.email);
+}
+
 export function safeWebUrl(value: unknown): string | null {
   try {
     const url = new URL(text(value));
@@ -94,7 +117,7 @@ export function normalizePlaneNotification(channel: ChannelOptions, rawPayload: 
   const data = record(payload.data);
   const activity = record(payload.activity);
   const issue = record(data.issue);
-  const project = record(data.project);
+  const project = record(typeof data.project === 'object' ? data.project : issue.project);
   const event = text(payload.event) || 'unknown';
   const action = text(payload.action);
   const field = text(activity.field);
@@ -119,12 +142,20 @@ export function normalizePlaneNotification(channel: ChannelOptions, rawPayload: 
   };
   const summary = [actionLabels[action] || action, eventLabels[event] || event].filter(Boolean).join('');
   const actor = record(activity.actor);
-  const actorName = text(actor.display_name) || [text(actor.first_name), text(actor.last_name)].filter(Boolean).join(' ');
-  const sequence = data.sequence_id ?? issue.sequence_id;
-  const identifier = text(project.identifier) && (typeof sequence === 'number' || typeof sequence === 'string')
-    ? `${text(project.identifier)}-${sequence}` : '';
-  const issueName = (event === 'issue' ? text(data.name) : text(issue.name)) || text(data.name);
-  const title = [identifier, issueName].filter(Boolean).join(' ') || `RtiTek Plane · ${summary}`;
+  const actorName = personName(actor);
+  const issueDetails = planeIssueDetails(event === 'issue' ? data : issue, project);
+  if (!issueDetails.issueIdentifier && url) {
+    const identifier = new URL(url).pathname.match(/\/browse\/([\w-]+-\d+)\/?$/)?.[1];
+    if (identifier) issueDetails.issueIdentifier = identifier;
+  }
+  const title = planeNotificationTitle(issueDetails, text(data.name) || `RtiTek Plane · ${summary}`);
+  const creator = data.created_by;
+  // On edits/deletions the event actor may not be the comment's author.
+  const commentAuthor = event === 'issue_comment'
+    ? personName(creator) || (id(creator) && id(creator) !== id(actor) ? '' : actorName) : '';
+  const createdAt = text(data.created_at);
+  const commentCreatedAt = event === 'issue_comment' && createdAt && Number.isFinite(Date.parse(createdAt))
+    ? new Date(createdAt).toISOString() : '';
   const details = [actorName, summary, field ? `字段: ${field}` : ''].filter(Boolean);
   if (field) {
     const before = displayValue(activity.old_value);
@@ -137,8 +168,50 @@ export function normalizePlaneNotification(channel: ChannelOptions, rawPayload: 
   return {
     title,
     message,
-    metadata: { plane: { deliveryId: text(payload.delivery_id), event, action, field, issueId, projectId, workspaceSlug, url, rawPayload, ...(parseError ? { parseError } : {}) } },
+    metadata: { plane: {
+      deliveryId: text(payload.delivery_id), event, action, field, issueId, projectId, workspaceSlug, url, rawPayload,
+      ...issueDetails,
+      ...(commentAuthor ? { commentAuthor } : {}),
+      ...(commentCreatedAt ? { commentCreatedAt } : {}),
+      ...(parseError ? { parseError } : {}),
+    } },
   };
+}
+
+export function hydratePlaneNotifications(items: AppNotification[], channels: Channel[]): AppNotification[] {
+  const sources = new Map(channels.map(channel => [channel.id, channel]));
+  const normalized = items.map(item => {
+    const previous = item.metadata?.plane;
+    if (item.type !== 'plane' || !previous || previous.attachment?.status === 'error') return item;
+    const parsed = normalizePlaneNotification(sources.get(item.channelId) ?? { planeWorkspaceSlug: previous.workspaceSlug }, previous.rawPayload, previous.sourceClick || previous.url);
+    const plane = { ...previous, ...parsed.metadata.plane,
+      issueIdentifier: previous.issueIdentifier || parsed.metadata.plane.issueIdentifier,
+      issueName: previous.issueName || parsed.metadata.plane.issueName,
+    };
+    return { ...item, title: planeNotificationTitle(plane, parsed.title), metadata: { ...item.metadata, plane } };
+  });
+  // Reuse known task details across independent reminders, including history.
+  const known = new Map<string, { issueIdentifier?: string; issueName?: string }>();
+  const taskKey = (item: AppNotification, plane: PlaneEvent) => JSON.stringify([item.channelId, plane.workspaceSlug, plane.projectId, plane.issueId]);
+  for (const item of [...normalized].sort((a, b) => b.timestamp - a.timestamp)) {
+    const plane = item.metadata?.plane;
+    if (!plane?.issueId) continue;
+    const key = taskKey(item, plane);
+    const details = known.get(key) ?? {};
+    details.issueIdentifier ||= plane.issueIdentifier;
+    details.issueName ||= plane.issueName;
+    known.set(key, details);
+  }
+  return normalized.map(item => {
+    const previous = item.metadata?.plane;
+    if (!previous?.issueId) return item;
+    const details = known.get(taskKey(item, previous));
+    const plane = { ...previous,
+      issueIdentifier: previous.issueIdentifier || details?.issueIdentifier,
+      issueName: previous.issueName || details?.issueName,
+    };
+    return { ...item, title: planeNotificationTitle(plane, item.title), metadata: { ...item.metadata, plane } };
+  });
 }
 
 function displayValue(value: unknown): string {

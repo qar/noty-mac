@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('api', {
   getChannels: () => ipcRenderer.invoke('get-channels'),
   addChannel: (name, url, options) => ipcRenderer.invoke('add-channel', name, url, options),
   removeChannel: (id) => ipcRenderer.invoke('remove-channel', id),
+  setPlaneApiKey: (id, apiKey) => ipcRenderer.invoke('set-plane-api-key', id, apiKey),
 
   // 设置相关
   getSettings: () => ipcRenderer.invoke('get-settings'),

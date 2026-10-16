@@ -13,7 +13,8 @@ const schema = {
         type: { type: 'string', enum: ['tmux-agent', 'plane'] },
         planeBaseUrl: { type: 'string' },
         planeWorkspaceSlug: { type: 'string' },
-        encryptedAccessToken: { type: 'string' }
+        encryptedAccessToken: { type: 'string' },
+        encryptedPlaneApiKey: { type: 'string' }
       },
       required: ['id', 'name', 'url']
     }

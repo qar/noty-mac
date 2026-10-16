@@ -216,6 +216,14 @@ input {
 .notification-open:disabled { cursor: progress; }
 .notification-title { color: var(--legacy-text); font-size: 13px; line-height: 1.5; margin-bottom: 5px; overflow-wrap: anywhere; }
 .notification-title svg { margin-left: 6px; color: var(--legacy-faint); vertical-align: middle; }
+.notification-open-plane { display: flex; align-items: center; gap: 6px; }
+.notification-open-plane .notification-title { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 0; }
+.notification-open-plane > svg { flex-shrink: 0; color: var(--legacy-faint); }
+.notification-comment-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin-bottom: 8px; color: var(--legacy-muted); font-size: 11px; line-height: 1.5; }
+.notification-comment-meta > span { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; }
+.notification-comment-meta svg { flex-shrink: 0; }
+.notification-comment-author > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notification-comment-time { flex-shrink: 0; }
 .notification-message { margin: 0; font-family: var(--legacy-font); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 .notification-context { display: flex; flex-wrap: wrap; gap: 5px 14px; margin-bottom: 10px; font-size: 11px; line-height: 1.5; color: var(--legacy-muted); }
 .notification-context-item { display: flex; align-items: flex-start; gap: 6px; min-width: 0; max-width: 100%; }

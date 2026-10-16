@@ -74,10 +74,11 @@ async function openNotificationTarget(notification, options = {}) {
 }
 
 function publicChannels() {
-  return store.get('channels').map(({ encryptedAccessToken, ...channel }) => ({
+  return store.get('channels').map(({ encryptedAccessToken, encryptedPlaneApiKey, ...channel }) => ({
     ...channel,
     type: channel.type || 'tmux-agent',
     hasAccessToken: Boolean(encryptedAccessToken),
+    hasPlaneApiKey: Boolean(encryptedPlaneApiKey),
   }));
 }
 
@@ -629,6 +630,7 @@ function setupIPC() {
   });
   // 获取通知列表
   ipcMain.handle('get-notifications', async () => {
+    ntfyClient?.refreshPlaneNotifications();
     let sessions = new Map();
     if (store.get('notifications').some(item => item.type !== 'plane' && resolveNotificationTmuxTarget(item))) {
       try {
@@ -742,6 +744,10 @@ function setupIPC() {
       if (!safeStorage.isEncryptionAvailable()) throw new Error('系统安全存储不可用，无法保存访问令牌');
       channel.encryptedAccessToken = safeStorage.encryptString(options.accessToken.trim()).toString('base64');
     }
+    if (channel.type === 'plane' && typeof options.planeApiKey === 'string' && options.planeApiKey.trim()) {
+      if (!safeStorage.isEncryptionAvailable()) throw new Error('系统安全存储不可用，无法保存 Plane API 密钥');
+      channel.encryptedPlaneApiKey = safeStorage.encryptString(options.planeApiKey.trim()).toString('base64');
+    }
 
     channels.push(channel);
     store.set('channels', channels);
@@ -751,6 +757,22 @@ function setupIPC() {
       ntfyClient.subscribeToChannel(channel);
     }
 
+    return publicChannels();
+  });
+
+  ipcMain.handle('set-plane-api-key', (_event, id, apiKey) => {
+    const channels = store.get('channels');
+    const channel = channels.find(source => source.id === id && source.type === 'plane');
+    if (!channel || typeof apiKey !== 'string') throw new Error('通知来源无效');
+    if (apiKey.trim()) {
+      if (!safeStorage.isEncryptionAvailable()) throw new Error('系统安全存储不可用，无法保存 Plane API 密钥');
+      channel.encryptedPlaneApiKey = safeStorage.encryptString(apiKey.trim()).toString('base64');
+    } else {
+      // An explicit empty value also prevents re-importing a legacy credential.
+      channel.encryptedPlaneApiKey = '';
+    }
+    store.set('channels', channels);
+    ntfyClient?.resetPlaneDetails();
     return publicChannels();
   });
 

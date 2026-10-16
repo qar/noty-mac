@@ -1,4 +1,4 @@
-import { BellPlus, ClipboardList, Terminal, Trash2 } from 'lucide-react';
+import { BellPlus, ClipboardList, KeyRound, Save, Terminal, Trash2, X } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 import type { Channel } from '../../renderer-api';
 import type { NotificationType } from '../../../main/notification-types';
@@ -11,6 +11,9 @@ export function ChannelSettings() {
   const [planeBaseUrl, setPlaneBaseUrl] = useState('');
   const [planeWorkspaceSlug, setPlaneWorkspaceSlug] = useState('');
   const [accessToken, setAccessToken] = useState('');
+  const [planeApiKey, setPlaneApiKey] = useState('');
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [replacementKey, setReplacementKey] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -39,15 +42,30 @@ export function ChannelSettings() {
     setError(null);
     try {
       const next = await window.api.addChannel(name.trim(), nextUrl, {
-        type, planeBaseUrl, planeWorkspaceSlug, accessToken,
+        type, planeBaseUrl, planeWorkspaceSlug, accessToken, planeApiKey,
       });
       setChannels(next);
       setName('');
       setUrl('');
       setAccessToken('');
+      setPlaneApiKey('');
     } catch (addError) {
       console.error('[settings] addChannel failed:', addError);
       setError(addError instanceof Error ? addError.message : '新建通知失败，请重试');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const savePlaneKey = async (id: string, key: string): Promise<void> => {
+    setSubmitting(true);
+    setError(null);
+    try {
+      setChannels(await window.api.setPlaneApiKey(id, key));
+      setEditingKey(null);
+      setReplacementKey('');
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : '保存 Plane API 密钥失败');
     } finally {
       setSubmitting(false);
     }
@@ -86,7 +104,19 @@ export function ChannelSettings() {
                     {channel.url}
                   </code>
                   {channel.planeBaseUrl ? <span className="channel-settings-url">{channel.planeBaseUrl}</span> : null}
+                  {editingKey === channel.id ? <form className="settings-form" onSubmit={event => { event.preventDefault(); void savePlaneKey(channel.id, replacementKey); }}>
+                    <label className="settings-form-field">
+                      <span>Plane API 密钥{channel.hasPlaneApiKey ? '（已配置）' : ''}</span>
+                      <input type="password" autoComplete="off" value={replacementKey} disabled={submitting} onChange={event => setReplacementKey(event.target.value)} />
+                    </label>
+                    <div className="settings-form-actions">
+                      <button type="submit" className="settings-icon-button" title="保存 Plane API 密钥" aria-label="保存 Plane API 密钥" disabled={submitting || !replacementKey.trim()}><Save /></button>
+                      {channel.hasPlaneApiKey ? <button type="button" className="settings-icon-button is-danger" title="移除 Plane API 密钥" aria-label="移除 Plane API 密钥" disabled={submitting} onClick={() => void savePlaneKey(channel.id, '')}><Trash2 /></button> : null}
+                      <button type="button" className="settings-icon-button" title="取消" aria-label="取消" disabled={submitting} onClick={() => { setEditingKey(null); setReplacementKey(''); }}><X /></button>
+                    </div>
+                  </form> : null}
                 </div>
+                {channel.type === 'plane' ? <button type="button" className="settings-icon-button" title={`Plane API 密钥${channel.hasPlaneApiKey ? '（已配置）' : ''}`} aria-label={`配置 Plane API 密钥：${channel.name}`} disabled={submitting} onClick={() => { setEditingKey(channel.id); setReplacementKey(''); }}><KeyRound aria-hidden="true" /></button> : null}
                 <button
                   type="button"
                   className="settings-icon-button is-danger"
@@ -153,6 +183,10 @@ export function ChannelSettings() {
             <label className="settings-form-field">
               <span>工作区标识（可选）</span>
               <input type="text" value={planeWorkspaceSlug} placeholder="rtitek" disabled={submitting} onChange={(event) => setPlaneWorkspaceSlug(event.target.value)} />
+            </label>
+            <label className="settings-form-field">
+              <span>Plane API 密钥（可选）</span>
+              <input type="password" value={planeApiKey} autoComplete="off" disabled={submitting} onChange={event => setPlaneApiKey(event.target.value)} />
             </label>
           </> : null}
           <div className="settings-form-actions">
