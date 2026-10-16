@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Archive, BellPlus, ExternalLink, Inbox, RotateCcw, Settings } from 'lucide-react';
+import { Archive, BellPlus, ExternalLink, Inbox, RotateCcw, Settings, Terminal } from 'lucide-react';
 import type { AppNotification, Channel } from '../main/notification-types';
 import { isPendingNotification, planeCommentPreview } from '../main/notification-core';
 import './renderer-api';
@@ -151,6 +151,10 @@ function Notifications() {
             </div>
           </div>
           {project ? <div className="notification-session-title">{project.name}{project.branch ? ` (${project.branch})` : ''}</div> : null}
+          {!plane && target ? <div className="notification-tmux-target" title={`tmux: ${target}`}>
+            <Terminal size={14} aria-hidden="true" />
+            <span>{item.metadata?.tmux?.session && !item.metadata.tmux.session.startsWith('%') ? item.metadata.tmux.session : '会话不可用'}</span>
+          </div> : null}
           {item.metadata?.plane?.attachment?.status === 'error' ? <div className="notification-error" role="status">
             {item.metadata.plane.attachment.error}
             <button className="icon-btn" title="重试读取正文" aria-label={`重试读取正文：${title}`} disabled={Boolean(busy)} onClick={() => void perform(item.id, () => window.api.retryNotificationAttachment(item.id))}><RotateCcw /></button>
@@ -175,7 +179,10 @@ function formatMessage(item: AppNotification): { text: string; isJson: boolean }
   try {
     return { text: JSON.stringify(JSON.parse(raw), null, 2), isJson: true };
   } catch {
-    return { text: raw, isJson: false };
+    const text = item.type !== 'plane' && item.metadata?.tmux?.target
+      ? raw.split('\n').filter(line => !/^\s*(?:🖥\s*)?tmux\s*:\s*[A-Za-z0-9_.:%@+/-]+\s*$/i.test(line)).join('\n').trimStart()
+      : raw;
+    return { text, isJson: false };
   }
 }
 

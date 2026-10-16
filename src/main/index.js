@@ -628,8 +628,24 @@ function setupIPC() {
     await ntfyClient.retryAttachment(id);
   });
   // 获取通知列表
-  ipcMain.handle('get-notifications', () => {
-    return store.get('notifications');
+  ipcMain.handle('get-notifications', async () => {
+    let sessions = new Map();
+    if (store.get('notifications').some(item => item.type !== 'plane' && resolveNotificationTmuxTarget(item))) {
+      try {
+        const output = await execTmux(['list-panes', '-a', '-F', '#{pane_id}\t#{session_name}']);
+        sessions = new Map(output.split('\n').map(line => line.split('\t')).filter(parts => parts.length === 2));
+      } catch {
+        // Notifications remain readable when tmux is stopped or unavailable.
+      }
+    }
+    return store.get('notifications').map(item => {
+      if (item.type === 'plane') return item;
+      const target = resolveNotificationTmuxTarget(item);
+      if (!target) return item;
+      return { ...item, metadata: { ...item.metadata, tmux: {
+        ...item.metadata?.tmux, target, session: sessions.get(target) || item.metadata?.tmux?.session,
+      } } };
+    });
   });
 
   // 标记已读

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-function navigation({ project = 'noty-mac', root = '/work/noty-mac', gitFails = false } = {}) {
+function navigation({ project = 'noty-mac', root = '/work/noty-mac', gitFails = false, tmuxUnavailable = false } = {}) {
   const state = { notifications: [{ id: 'one', channelId: 'ai', read: false, message: 'Done',
     metadata: { tmux: { target: '%31' }, ...(project ? { project: { name: project } } : {}) } }] };
   const commands = [];
@@ -17,6 +17,7 @@ function navigation({ project = 'noty-mac', root = '/work/noty-mac', gitFails = 
       };
       if (name === 'child_process') return { execFile(file, args, options, callback) {
         commands.push([file, ...args]);
+        if (args[0] === 'list-panes') return callback(tmuxUnavailable ? new Error('No tmux server') : null, '%31\thl-sensor\n%48\tnoty-mac\n');
         if (file.endsWith('git')) return callback(gitFails ? new Error('Not a repository') : null, `${root}\n`);
         if (args[0] === 'display-message') {
           const value = args.at(-1) === '#{pane_current_path}' ? `${root}/src` : args.at(-1) === '#S' ? 'session' : 'session:1';
@@ -33,7 +34,8 @@ function navigation({ project = 'noty-mac', root = '/work/noty-mac', gitFails = 
     },
   };
   vm.runInNewContext(fs.readFileSync(require.resolve('../dist/main/index'), 'utf8') + '\nupdateTrayIcon = () => {}; setupIPC();', context);
-  return { commands, state, jump: (options) => handlers.get('jump-to-notification-target')({}, 'one', options) };
+  return { commands, state, jump: (options) => handlers.get('jump-to-notification-target')({}, 'one', options),
+    notifications: () => handlers.get('get-notifications')() };
 }
 
 test('historical notifications with a wrong project target neither switch panes nor dismiss', async () => {
@@ -72,4 +74,27 @@ test('successful navigation never dismisses another project sharing a corrupted 
   assert.equal((await app.jump({ notificationIds: ['one', 'other'] })).success, true);
   assert.equal(app.state.notifications[0].read, true);
   assert.equal(app.state.notifications[1].read, false);
+});
+
+test('notification display resolves session names without changing stored routing, content or state', async () => {
+  const app = navigation();
+  app.state.notifications[0].message = 'tmux: %31\nOriginal content';
+  app.state.notifications.push({ id: 'legacy', message: 'tmux: %48\nLegacy content', read: false });
+  const original = structuredClone(app.state.notifications);
+  const items = await app.notifications();
+  assert.equal(items[0].metadata.tmux.session, 'hl-sensor');
+  assert.equal(items[0].metadata.tmux.target, '%31');
+  assert.equal(items[0].message, original[0].message);
+  assert.equal(items[1].metadata.tmux.session, 'noty-mac');
+  assert.deepEqual(app.state.notifications, original);
+  assert.equal(app.commands.filter(command => command.includes('list-panes')).length, 1);
+});
+
+test('notification display remains available when tmux is stopped', async () => {
+  const app = navigation({ tmuxUnavailable: true });
+  app.state.notifications[0].metadata.tmux.session = 'known-session';
+  const [item] = await app.notifications();
+  assert.equal(item.metadata.tmux.session, 'known-session');
+  assert.equal(item.metadata.tmux.target, '%31');
+  assert.equal(item.read, false);
 });

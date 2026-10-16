@@ -224,6 +224,9 @@ input {
 .notification-title { color: var(--legacy-text); font-size: 13px; line-height: 1.5; margin-bottom: 5px; overflow-wrap: anywhere; }
 .notification-title svg { margin-left: 6px; color: var(--legacy-faint); vertical-align: middle; }
 .notification-message { margin: 0; font-family: var(--legacy-font); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.notification-tmux-target { display: flex; align-items: flex-start; gap: 6px; margin-bottom: 8px; color: var(--legacy-muted); }
+.notification-tmux-target svg { flex: 0 0 14px; margin-top: 2px; }
+.notification-tmux-target span { min-width: 0; overflow-wrap: anywhere; }
 .notification-raw { margin-top: 8px; }
 .notification-raw summary { color: var(--legacy-faint); cursor: pointer; font-size: 11px; }
 .notification-raw[open] summary { margin-bottom: 8px; }
