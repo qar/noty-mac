@@ -148,3 +148,27 @@ For more details, see README.md and docs/QUICKSTART.md.
 - If push fails, resolve and retry until it succeeds
 
 <!-- END BEADS INTEGRATION -->
+
+## Commit-Time Beads Sync
+
+This repo wires beads into git via `core.hooksPath=.beads/hooks`. bd's own `pre-commit` hook runs forensics only (agent-identity trailers, chained bd hooks) — **it does NOT auto-export `issues.jsonl` into the current commit**. You must do that explicitly.
+
+**Required workflow before every `git commit`** (agent responsibility):
+
+```bash
+bd export -o .beads/issues.jsonl
+git add .beads/issues.jsonl
+git commit -m "..."
+```
+
+- `.beads/issues.jsonl` is tracked in git (`.beads/.gitignore` explicitly does NOT ignore it). Every commit that changes beads state should also carry the updated JSONL snapshot in the same commit, so `git log -p -- .beads/issues.jsonl` stays reviewable.
+- bd's own auto-sync (5s debounce) only writes to disk between operations; it does not stage anything. Only your explicit `git add` gets the file into the commit.
+
+Agent rules:
+
+- Before starting work on a task, `bd create` an issue (or claim an existing one with `bd update <id> --status in_progress`).
+- On completion, update the description (mark execution-plan checkboxes as done) then `bd close <id> --reason "…"`. Do this **before** the `bd export` + `git commit` step, so the closing state lands in the JSONL snapshot.
+- **Do not edit `.beads/hooks/*`** — bd regenerates those files and will overwrite manual changes. If a hook misbehaves, run `bd doctor`.
+- Prefer referencing the issue id in commit messages: `Refs: t-<id>` or `Closes: t-<id>`.
+
+Running bd inside Claude Code sandboxes: bd connects to a local Dolt server on localhost. Pass `dangerouslyDisableSandbox: true` on the Bash tool call whenever the command uses `bd`, `git commit` (because it triggers the bd hook), or `git push`.

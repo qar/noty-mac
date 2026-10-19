@@ -5,28 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Noty</title>
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="theme.css" />
   </head>
   <body>
-    <div class="container">
-      <div class="header">
-        <h2>通知</h2>
-        <div class="header-actions">
-          <button id="markAllReadBtn" class="icon-btn" title="全部已读">✓</button>
-          <button id="settingsBtn" class="icon-btn" title="设置">⚙️</button>
-        </div>
-      </div>
-
-      <div id="notificationList" class="notification-list">
-        <!-- 通知项将动态插入 -->
-      </div>
-
-      <!--
-      <div class="footer">
-        <button id="clearReadBtn" class="btn">清空已读</button>
-      </div>
-      -->
-    </div>
-
-    <script src="app.js"></script>
+    <div id="root"></div>
+    <script src="notifications.bundle.js"></script>
   </body>
 </html>

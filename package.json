@@ -1,13 +1,19 @@
 {
   "name": "noty-mac",
-  "version": "1.2.3",
+  "version": "1.3.0",
   "description": "macOS 菜单栏应用，用于显示 ntfy.sh 通知",
-  "main": "src/main/index.js",
+  "main": "dist/main/index.js",
   "scripts": {
-    "start": "electron .",
-    "dev": "electron . --enable-logging",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder --mac",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.renderer.json",
+    "build:main": "tsc",
+    "build:renderer": "node scripts/build-renderer.js",
+    "build": "npm run clean && npm run build:main && npm run build:renderer",
+    "test": "npm run build:main && node --test tests/*.test.js",
+    "start": "npm run build && electron .",
+    "dev": "npm run build && electron . --enable-logging",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder --mac",
     "extract-asar": "cp -f release/mac-arm64/Noty.app/Contents/Resources/app.asar release/app.asar && echo 'Extracted app.asar to release/app.asar'"
   },
   "keywords": [
@@ -24,10 +30,20 @@
     "url": "https://github.com/qar/noty-mac.git"
   },
   "dependencies": {
-    "electron-store": "^8.1.0"
+    "electron-store": "^8.1.0",
+    "html-to-text": "^9.0.5",
+    "lucide-react": "^1.28.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@types/html-to-text": "^9.0.4",
+    "@types/node": "^26.1.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
     "electron": "^28.3.3",
-    "electron-builder": "^26.8.1"
+    "electron-builder": "^26.8.1",
+    "esbuild": "^0.28.1",
+    "typescript": "^5.9.3"
   }
 }

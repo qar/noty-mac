@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Noty</title>
+    <link rel="stylesheet" href="main.css" />
+  </head>
+  <body>
+    <!-- Full-width drag region covering the hiddenInset traffic-light row.
+         Traffic lights themselves stay clickable because macOS treats them
+         as special (they punch through -webkit-app-region: drag). Interactive
+         elements below the header set `no-drag` so they remain clickable. -->
+    <div class="title-bar-drag" aria-hidden="true"></div>
+
+    <div id="root"></div>
+
+    <script src="main.bundle.js"></script>
+  </body>
+</html>

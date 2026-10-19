@@ -36,9 +36,11 @@
 
 1. 输入 JSON 中的 `.tmux.target` / `.metadata.tmux.target`
 2. 输入 JSON 中的 `.tmux.session` + `.tmux.window` + `.tmux.pane` 拼接
-3. `$TMUX_PANE` 环境变量 (tmux 为每个 pane 的进程自动设置，**最准确**)
-4. `$TMUX` 环境变量 + `tmux display-message` 获取当前活跃 pane
-5. 无 `$TMUX` 时，查找最近活跃的 tmux client
+3. 输入 JSON 中单独指定的 `.tmux.pane`，如 `%42`
+4. 普通终端 hook 的 `$TMUX_PANE`，但必须确认该 pane 的目录属于通知 `cwd` 对应的仓库
+5. 按通知 `cwd` 查找唯一匹配的 pane；优先精确目录，其次同一仓库内的目录
+
+共享 Codex 后台进程可能让多个会话继承同一个 `$TMUX_PANE`。存在 `CODEX_THREAD_ID` 时，不直接信任这个环境变量，只使用明确传入的目标或唯一匹配的目录。同一目录有多个候选 pane 时，消息仍会发送，但不附加猜测的目标；调用方可通过 `.tmux.target` 传入已知来源。脚本不会回退到当前活跃 pane 或最近活跃 client。
 
 **关键**: 脚本会把 tmux target 嵌入消息体 (`🖥 tmux: <target>`)，这是数据传递的**唯一可靠通道**。
 
@@ -58,7 +60,7 @@ echo '{"title":"Test","message":"hello"}' | bash -x ~/.config/noty/ntfy-notify.s
 | 现象 | 原因 | 解决 |
 |------|------|------|
 | `TMUX_TARGET` 为空 | Hook 进程未继承 `$TMUX` / `$TMUX_PANE` | 确认 Claude Code 在 tmux 内运行 |
-| `TMUX_TARGET` 指向错误 pane | 使用了 `display-message -p` (获取活跃 pane) 而非 `$TMUX_PANE` | 确认使用最新版 `ntfy-notify.example.sh` |
+| 不同项目都指向同一个 pane | 共享后台进程继承了固定的 `$TMUX_PANE`，或旧脚本回退到了活跃 pane | 更新发送脚本并核对 `cwd` 与 pane 目录；不要只检查环境变量是否非空 |
 
 ### 环节 2: ntfy.sh 服务器 — 字段丢失 (核心陷阱)
 
@@ -140,7 +142,11 @@ cat ~/Library/Application\ Support/noty-mac/config.json | \
 
 ### 环节 4: Renderer — 点击判断
 
-**文件**: `src/renderer/app.js` — 第 76-102 行
+**文件**: `src/renderer/notifications.tsx`
+
+通知卡片使用会话名称（如 `hl-sensor`）展示 tmux 目标，悬停可查看底层 pane ID。读取列表时通过一次 `list-panes` 查询补全名称，不修改已保存的原文、跳转目标或提醒状态。没有可用名称时显示「会话不可用」，正文中的 tmux 目标行仅在显示时隐藏。
+
+项目、Git 分支和 tmux 会话分别使用文件夹、分支和终端图标，悬停显示字段含义。正文中与解析结果完全一致的项目行不再重复展示；来源名称与消息标题相同时也只显示一次。原始存储内容保持完整。
 
 点击时检查两个条件 (满足任一即触发跳转):
 ```javascript
@@ -148,7 +154,7 @@ const hasTmuxTarget = !!notification?.metadata?.tmux?.target;
 const hasTmuxLine = /^\s*(?:🖥\s*)?tmux\s*:\s*([A-Za-z0-9_.:%@+/-]+)\s*$/im.test(notification?.message || '');
 ```
 
-如果两个条件都不满足，点击只会标记已读，不触发跳转。
+没有目标时不跳转、不收起。跳转成功后自动收起到历史，失败时保留提醒。相同 target 但来自不同项目的消息不会合并，也不会被同一次跳转一并收起。
 
 #### 调试方法
 
@@ -164,6 +170,8 @@ Failed to jump tmux target: <reason>
 **文件**: `src/main/index.js` — `jumpToTmuxTarget(target, options)`
 
 执行步骤:
+
+通知带有项目名时，跳转前先读取目标 pane 的当前目录及 Git 仓库名。目标不存在、项目不符或无法核实时，重新查找来源。优先使用 `metadata.tmux.sourceProject`；没有来源项目时，使用消息项目和分支。先匹配发送者对应的 AI pane，再匹配没有 AI 进程的唯一终端。多个候选或查询失败时返回错误并保留提醒。跳转前再次校验恢复的 checkout，避免查询期间目录变化造成误跳。
 
 ```
 1. isValidTmuxTarget(target)         验证 target 格式
@@ -201,6 +209,10 @@ tmux select-pane -t '%42'
 |--------|------|----------|
 | `no_target` | 通知中没有 tmux target | 检查环节 3 |
 | `invalid_target` | target 格式不合法 | 检查 target 字符串 |
+| `source_project_mismatch` | 记录的目标属于其他项目 | 检查发送端是否继承了错误的 pane；旧消息保留原文 |
+| `source_project_unverified` | 无法核实目标的 Git 仓库 | 检查 pane 当前目录是否仍为原仓库 |
+| `source_unavailable` | 没有找到匹配来源的终端 | 检查原终端是否仍存在，以及通知的来源项目 |
+| `source_ambiguous` | 同一来源有多个候选终端 | 不能仅凭项目名还原具体发送 pane |
 | `no_attached_client` | 没有 Kitty 终端连接 tmux | 确认 Kitty 正在运行且 attach 了 tmux |
 | `tmux_not_found` | 找不到 tmux 二进制 | 检查 PATH |
 | `kitty_unavailable` | Kitty 应用未安装 | — |
@@ -257,13 +269,46 @@ tail -f /tmp/noty-mac-debug.log | grep '\[jump\]\|\[ipc\]'
 | `scripts/ntfy-notify.example.sh` | 通知脚本源码 (最新版) |
 | `src/main/index.js` | 跳转逻辑 (`jumpToTmuxTarget`) |
 | `src/main/ntfy-client.js` | 通知接收 + metadata 解析 (`normalizeTmuxMetadata`) |
-| `src/renderer/app.js` | 点击事件处理 |
+| `src/renderer/notifications.tsx` | 点击事件处理 |
 | `src/preload.js` | IPC 桥接 |
 | `src/main/store.js` | 数据存储 schema |
 | `~/Library/Application Support/noty-mac/config.json` | 运行时数据 (通知列表) |
 | `~/.claude/settings.json` | Claude Code hook 配置 |
 
 ## 历史教训
+
+### 2026-10-19: 后台子进程丢失来源，tmux 重启后编号失效
+
+后台 `codex exec` 的 `session_meta.cwd` 可能是独立工单目录，并没有对应终端。
+其通知应返回启动它的主会话。脚本先读取原生子 agent 的父线程关系；对于
+`source: "exec"`，沿实际进程祖先查找 `codex exec` 启动时继承的父线程 ID，
+再读取父线程的会话头。遇到共享 `app-server` 就停止，避免使用后台服务的
+环境代替当前会话。追溯有深度和循环限制，父会话声明存在但无法核实时不猜测。
+
+tmux 重启后，旧 pane 编号可能不存在，也可能被其他项目复用。因此已有 target
+同样需要校验和恢复。AI 已退出但唯一匹配的终端仍存在时，允许跳转回该终端。
+来源不唯一时保留提醒并报告原因，不选择当前活跃 pane。
+
+回归测试覆盖后台 exec、嵌套父线程、共享 daemon 边界、旧编号复用、原 AI 退出和
+跳转前再次校验。真实消息使用隔离配置验证点击链路，拦截终端切换动作，避免改变
+用户正在操作的终端和提醒状态。修复历史元数据前仍需核对实际发送记录。
+
+### 2026-10-16: 临时审查目录的通知丢失终端来源
+
+Codex 可以在 `hl-trv-app` 终端里审查另一个仓库，把命令的工作目录设为
+`rtm-review-283`。通知的 `cwd` 是实际处理项目，不能用它代替终端的启动目录。
+共享 app-server 继承的 `TMUX_PANE` 也可能属于其他终端。
+
+发送脚本通过 `CODEX_THREAD_ID` 找到对应 rollout，仅读取第一行 `session_meta`
+中的 `cwd`，按这个目录选择唯一的来源窗格。明确提供的 target 仍优先；多个
+Codex 共用目录时不猜测，也不回退到命令执行目录。
+
+消息保留原有项目行，并通过 `tmux-source: {"project":"hl-trv-app"}` 传输
+终端来源项目。接收端将它保存为 `metadata.tmux.sourceProject`，用于跳转前
+的项目校验；系统通知和提醒正文隐藏这行传输信息。旧通知仍沿用原有校验。
+
+缺少 target 的历史通知不能仅凭临时项目名恢复。修复历史记录前，必须核对
+发送会话、实际发送内容及仍在运行的终端，只补齐确认过的跳转元数据。
 
 ### 2026-04-13: 点击通知无法跳转
 

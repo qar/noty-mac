@@ -1,7 +1,8 @@
-const { BrowserWindow } = require('electron');
+const { BrowserWindow, app } = require('electron');
 const path = require('path');
 
 let mainWindow = null;
+let selectedNotificationId = null;
 
 function createWindow(tray) {
   if (mainWindow) {
@@ -22,7 +23,7 @@ function createWindow(tray) {
     }
   });
 
-  mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+  mainWindow.loadFile(path.join(app.getAppPath(), 'dist/renderer/index.html'));
 
   // 窗口失焦时隐藏
   mainWindow.on('blur', () => {
@@ -74,9 +75,22 @@ function getWindow() {
   return mainWindow;
 }
 
+function showNotification(tray, id) {
+  selectedNotificationId = id;
+  showWindow(tray);
+  app.focus({ steal: true });
+  mainWindow.webContents.send('notification-selected', id);
+}
+
+function getSelectedNotificationId() {
+  return selectedNotificationId;
+}
+
 module.exports = {
   createWindow,
   toggleWindow,
   showWindow,
+  showNotification,
+  getSelectedNotificationId,
   getWindow
 };
