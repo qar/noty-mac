@@ -28,3 +28,11 @@ test('failed probes and multiple matching checkouts never select the first or mo
     return checkout;
   })).reason, 'source_project_unverified');
 });
+
+test('a unique source shell remains navigable after its agent exits', async () => {
+  const result = await recoverNotificationTarget(notification, panes, '100 1 zsh\n200 1 zsh', async target =>
+    target === '%1' ? checkout : { root: '/work/other', branch: 'main' });
+  assert.equal(result.target, '%1');
+  const ambiguous = await recoverNotificationTarget(notification, panes, '100 1 zsh\n200 1 zsh', async () => checkout);
+  assert.equal(ambiguous.reason, 'source_ambiguous');
+});

@@ -171,7 +171,7 @@ Failed to jump tmux target: <reason>
 
 执行步骤:
 
-通知带有项目名时，跳转前先读取目标 pane 的当前目录及 Git 仓库名。项目不符或无法核实时返回错误，避免旧的错误 target 把用户带到另一个项目，也避免自动收起这条提醒。旧消息只保存了错误的 pane ID、没有真实来源，无法据此还原具体发送 pane；此校验不会改写原文或猜测历史来源。
+通知带有项目名时，跳转前先读取目标 pane 的当前目录及 Git 仓库名。目标不存在、项目不符或无法核实时，重新查找来源。优先使用 `metadata.tmux.sourceProject`；没有来源项目时，使用消息项目和分支。先匹配发送者对应的 AI pane，再匹配没有 AI 进程的唯一终端。多个候选或查询失败时返回错误并保留提醒。跳转前再次校验恢复的 checkout，避免查询期间目录变化造成误跳。
 
 ```
 1. isValidTmuxTarget(target)         验证 target 格式
@@ -211,6 +211,8 @@ tmux select-pane -t '%42'
 | `invalid_target` | target 格式不合法 | 检查 target 字符串 |
 | `source_project_mismatch` | 记录的目标属于其他项目 | 检查发送端是否继承了错误的 pane；旧消息保留原文 |
 | `source_project_unverified` | 无法核实目标的 Git 仓库 | 检查 pane 当前目录是否仍为原仓库 |
+| `source_unavailable` | 没有找到匹配来源的终端 | 检查原终端是否仍存在，以及通知的来源项目 |
+| `source_ambiguous` | 同一来源有多个候选终端 | 不能仅凭项目名还原具体发送 pane |
 | `no_attached_client` | 没有 Kitty 终端连接 tmux | 确认 Kitty 正在运行且 attach 了 tmux |
 | `tmux_not_found` | 找不到 tmux 二进制 | 检查 PATH |
 | `kitty_unavailable` | Kitty 应用未安装 | — |
@@ -274,6 +276,22 @@ tail -f /tmp/noty-mac-debug.log | grep '\[jump\]\|\[ipc\]'
 | `~/.claude/settings.json` | Claude Code hook 配置 |
 
 ## 历史教训
+
+### 2026-10-19: 后台子进程丢失来源，tmux 重启后编号失效
+
+后台 `codex exec` 的 `session_meta.cwd` 可能是独立工单目录，并没有对应终端。
+其通知应返回启动它的主会话。脚本先读取原生子 agent 的父线程关系；对于
+`source: "exec"`，沿实际进程祖先查找 `codex exec` 启动时继承的父线程 ID，
+再读取父线程的会话头。遇到共享 `app-server` 就停止，避免使用后台服务的
+环境代替当前会话。追溯有深度和循环限制，父会话声明存在但无法核实时不猜测。
+
+tmux 重启后，旧 pane 编号可能不存在，也可能被其他项目复用。因此已有 target
+同样需要校验和恢复。AI 已退出但唯一匹配的终端仍存在时，允许跳转回该终端。
+来源不唯一时保留提醒并报告原因，不选择当前活跃 pane。
+
+回归测试覆盖后台 exec、嵌套父线程、共享 daemon 边界、旧编号复用、原 AI 退出和
+跳转前再次校验。真实消息使用隔离配置验证点击链路，拦截终端切换动作，避免改变
+用户正在操作的终端和提醒状态。修复历史元数据前仍需核对实际发送记录。
 
 ### 2026-10-16: 临时审查目录的通知丢失终端来源
 

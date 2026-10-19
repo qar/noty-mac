@@ -47,6 +47,64 @@ if [ -n "$CWD" ] && [ -d "$CWD" ] && git -C "$CWD" rev-parse --is-inside-work-tr
 fi
 
 # --- tmux target resolution (priority: input target > session/window/pane > local detect) ---
+codex_session_header() {
+  local thread="$1" header=""
+  [[ "$thread" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || return 0
+  local files=("${CODEX_HOME:-$HOME/.codex}"/sessions/*/*/*/rollout-*-"$thread".jsonl)
+  [ "${#files[@]}" -eq 1 ] && [ -f "${files[0]}" ] || return 0
+  IFS= read -r header < "${files[0]}" || true
+  printf '%s' "$header" | jq -ec --arg thread "$thread" '
+    select(.type == "session_meta" and .payload.id == $thread) | .payload
+    | select(.cwd | type == "string" and startswith("/") and (test("[\\r\\n\\t]") | not))
+    | {id, cwd, source}' 2>/dev/null || true
+}
+
+codex_exec_parent_thread() {
+  local thread="$1" pid="$PPID" command="" environment="" parent="" candidate="" depth
+  for ((depth=0; depth<32; depth++)); do
+    [[ "$pid" =~ ^[0-9]+$ ]] && [ "$pid" -gt 1 ] || break
+    command="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+    # Only an actual exec ancestor carries the launching thread. A shared
+    # app-server's environment belongs to its daemon, not this client.
+    [[ "$command" =~ (^|[[:space:]])app-server([[:space:]]|$) ]] && break
+    if [[ "$command" =~ ^([^[:space:]]*/)?codex[[:space:]]+(exec|e)([[:space:]]|$) ]]; then
+      environment="$(ps eww -p "$pid" -o command= 2>/dev/null || true)"
+      if [[ "$environment" == "$command"* ]]; then
+        environment="${environment#"$command"}"
+        candidate="$(printf '%s' "$environment" | jq -Rr '
+          [scan("(?:^| )CODEX_THREAD_ID=([0-9a-fA-F-]{36})(?: |$)") | .[0]]
+          | unique | if length == 1 then .[0] else empty end' 2>/dev/null || true)"
+        if [ -n "$candidate" ] && [ "$candidate" != "$thread" ]; then
+          printf '%s' "$candidate"
+          return 0
+        fi
+      fi
+    fi
+    parent="$(ps -p "$pid" -o ppid= 2>/dev/null | tr -d ' ' || true)"
+    [ "$parent" != "$pid" ] || break
+    pid="$parent"
+  done
+}
+
+codex_origin_cwd() {
+  local thread="$1" header="" parent="" visited=" " depth
+  for ((depth=0; depth<16; depth++)); do
+    [[ "$visited" != *" $thread "* ]] || return 0
+    visited="$visited$thread "
+    header="$(codex_session_header "$thread")"
+    [ -n "$header" ] || return 0
+    parent="$(printf '%s' "$header" | jq -r '.source | objects | .subagent.thread_spawn.parent_thread_id // empty')"
+    if [ -z "$parent" ] && [ "$(printf '%s' "$header" | jq -r '.source')" = 'exec' ]; then
+      parent="$(codex_exec_parent_thread "$thread")"
+    fi
+    if [ -z "$parent" ]; then
+      printf '%s' "$header" | jq -r '.cwd'
+      return 0
+    fi
+    thread="$parent"
+  done
+}
+
 SOURCE_TMUX_PANE="${TMUX_PANE:-}"
 SOURCE_PROJECT=""
 TMUX_TARGET="$(echo "$INPUT" | jq -r '.tmux.target // .metadata.tmux.target // .tmuxTarget // .tmux_target // .target // empty')"
@@ -63,21 +121,9 @@ fi
 
 if [ -z "$TMUX_TARGET" ] && command -v tmux >/dev/null 2>&1; then
   SOURCE_CWD="${CWD:-$PWD}"
-  # Tool cwd may be a temporary review checkout. The thread's session header
-  # records its terminal launch directory without trusting shared-daemon env.
-  THREAD_ID="${CODEX_THREAD_ID:-}"
-  THREAD_CWD=""
-  if [[ "$THREAD_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
-    SESSION_FILES=("${CODEX_HOME:-$HOME/.codex}"/sessions/*/*/*/rollout-*-"$THREAD_ID".jsonl)
-    if [ "${#SESSION_FILES[@]}" -eq 1 ] && [ -f "${SESSION_FILES[0]}" ]; then
-      SESSION_HEADER=""
-      IFS= read -r SESSION_HEADER < "${SESSION_FILES[0]}" || true
-      THREAD_CWD="$(printf '%s' "$SESSION_HEADER" | jq -er --arg thread "$THREAD_ID" '
-        select(.type == "session_meta" and .payload.id == $thread) | .payload.cwd
-        | select(type == "string" and startswith("/") and (test("[\\r\\n\\t]") | not))' 2>/dev/null || true)"
-      [ -z "$THREAD_CWD" ] || SOURCE_CWD="$THREAD_CWD"
-    fi
-  fi
+  ORIGIN_HEADER="$(codex_session_header "${CODEX_THREAD_ID:-}")"
+  THREAD_CWD="$(codex_origin_cwd "${CODEX_THREAD_ID:-}")"
+  [ -z "$THREAD_CWD" ] || SOURCE_CWD="$THREAD_CWD"
   SOURCE_CWD="$(cd "$SOURCE_CWD" 2>/dev/null && pwd -P || printf '%s' "$SOURCE_CWD")"
   SOURCE_ROOT="$(git -C "$SOURCE_CWD" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$SOURCE_CWD")"
   # Shared agent daemons can retain another terminal's TMUX_PANE. Validate it
@@ -85,6 +131,8 @@ if [ -z "$TMUX_TARGET" ] && command -v tmux >/dev/null 2>&1; then
   # A unique foreground Codex can be distinguished from sibling idle shells;
   # another agent or an unknown command remains ambiguous.
   PANE_SNAPSHOT="$(LC_ALL=en_US.UTF-8 tmux list-panes -a -F $'#{pane_id}\t#{pane_current_path}\t#{pane_current_command}' 2>/dev/null || true)"
+  # A declared but unverifiable parent must not fall back to the child checkout.
+  if [ -n "$ORIGIN_HEADER" ] && [ -z "$THREAD_CWD" ]; then PANE_SNAPSHOT=""; fi
   TMUX_TARGET="$(printf '%s' "$PANE_SNAPSHOT" | jq -Rrs \
     --arg cwd "$SOURCE_CWD" --arg root "$SOURCE_ROOT" --arg inherited "$SOURCE_TMUX_PANE" \
     --arg codexThread "${CODEX_THREAD_ID:-}" '

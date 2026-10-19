@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
-function publish(input, { panes, pane = '%31', codexThread = 'test-thread', session, sessionRaw }) {
+function publish(input, { panes, pane = '%31', codexThread = 'test-thread', session, sessionRaw, ancestors = [], parentSessions = [] }) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'noty-hook-'));
   try {
     const bin = path.join(root, 'bin');
@@ -15,6 +15,15 @@ function publish(input, { panes, pane = '%31', codexThread = 'test-thread', sess
     fs.mkdirSync(sessions, { recursive: true });
     if (session || sessionRaw) fs.writeFileSync(path.join(sessions, `rollout-2026-10-16T00-00-00-${codexThread}.jsonl`),
       sessionRaw ?? JSON.stringify({ type: 'session_meta', payload: { id: codexThread, ...session } }) + '\n');
+    for (const payload of parentSessions) fs.writeFileSync(path.join(sessions, `rollout-2026-10-16T00-00-00-${payload.id}.jsonl`),
+      JSON.stringify({ type: 'session_meta', payload }) + '\n');
+    fs.writeFileSync(path.join(bin, 'ps'), `#!${process.execPath}
+const args=process.argv.slice(2), entries=JSON.parse(process.env.TEST_ANCESTORS);
+const pid=args[args.indexOf('-p')+1], field=args[args.indexOf('-o')+1];
+const p=entries.find(p=>String(p.pid)===pid)||{parent:entries[0]?.pid||1,command:'/bin/zsh'};
+if(field==='ppid=') console.log(p.parent||1);
+else console.log(p.command+(args.includes('eww')&&p.thread?' CODEX_THREAD_ID='+p.thread:''));
+`, { mode: 0o755 });
     fs.writeFileSync(path.join(bin, 'tmux'), `#!${process.execPath}
 const args = process.argv.slice(2);
 const panes = JSON.parse(process.env.TEST_PANES);
@@ -39,7 +48,7 @@ require('node:fs').writeFileSync(process.env.TEST_CAPTURE, args[args.indexOf('-d
       env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, NTFY_CHANNEL: 'test-topic', NTFY_SERVER: 'https://invalid.example',
         TMUX_PANE: pane, TMUX: '/tmp/test-tmux/default,123,0', CODEX_THREAD_ID: codexThread,
         CODEX_HOME: path.join(root, 'codex'),
-        TEST_PANES: JSON.stringify(panes), TEST_CAPTURE: capture },
+        TEST_PANES: JSON.stringify(panes), TEST_CAPTURE: capture, TEST_ANCESTORS: JSON.stringify(ancestors) },
     });
     return JSON.parse(fs.readFileSync(capture, 'utf8'));
   } finally {
@@ -105,6 +114,7 @@ test('missing or stale context never falls back to the active client', () => {
 });
 
 const reviewThread = '11111111-2222-3333-4444-555555555555';
+const parentThread = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const reviewPanes = [
   { ...panes[0], pane_current_command: 'codex' },
   { ...panes[1], pane_id: '%34', pane_current_path: '/work/hl-trv-app', pane_current_command: 'codex' },
@@ -120,6 +130,56 @@ test('temporary review notifications follow the thread origin, not tool cwd or i
   assert.equal(payload.tmux.sourceProject, 'hl-trv-app');
   assert.match(payload.message, /tmux-source: \{"project":"hl-trv-app"\}/);
   assert.doesNotMatch(payload.message, /\/work\//);
+});
+
+test('headless Codex exec notifications follow the launching thread instead of their worktree', () => {
+  const payload = publish({ cwd: '/work/rtm-review-283' }, {
+    panes: reviewPanes, codexThread: reviewThread, session: { cwd: '/work/rtm-review-283', source: 'exec' },
+    ancestors: [{ pid: 101, parent: 1, command: 'codex exec --json -C /work/rtm-review-283', thread: parentThread }],
+    parentSessions: [{ id: parentThread, cwd: '/work/hl-trv-app', source: 'vscode' }],
+  });
+  assert.equal(payload.tmux?.target, '%34');
+  assert.equal(payload.tmux.sourceProject, 'hl-trv-app');
+});
+
+test('native subagents follow structured parent threads without using the shared daemon environment', () => {
+  const payload = publish({ cwd: '/work/rtm-review-283' }, {
+    panes: reviewPanes, codexThread: reviewThread,
+    session: { cwd: '/work/rtm-review-283', source: { subagent: { thread_spawn: { parent_thread_id: parentThread } } } },
+    parentSessions: [{ id: parentThread, cwd: '/work/hl-trv-app', source: 'vscode' }],
+  });
+  assert.equal(payload.tmux?.target, '%34');
+});
+
+test('headless origin discovery stops at the shared app-server boundary', () => {
+  const payload = publish({ cwd: '/work/rtm-review-283' }, {
+    panes: reviewPanes.filter(p => p.pane_id !== '%99'), codexThread: reviewThread,
+    session: { cwd: '/work/rtm-review-283', source: 'exec' },
+    ancestors: [{ pid: 101, parent: 102, command: 'codex app-server', thread: parentThread },
+      { pid: 102, parent: 1, command: 'codex exec', thread: parentThread }],
+    parentSessions: [{ id: parentThread, cwd: '/work/hl-trv-app', source: 'vscode' }],
+  });
+  assert.equal(payload.tmux, undefined);
+});
+
+test('nested exec processes retain their terminal ancestor and reject cyclic native parents', () => {
+  const outerThread = 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff';
+  const payload = publish({ cwd: '/work/rtm-review-283' }, {
+    panes: reviewPanes, codexThread: reviewThread, session: { cwd: '/work/rtm-review-283', source: 'exec' },
+    ancestors: [{ pid: 101, parent: 102, command: 'codex exec --json', thread: parentThread },
+      { pid: 102, parent: 1, command: '/opt/bin/codex exec --json', thread: outerThread }],
+    parentSessions: [{ id: parentThread, cwd: '/work/intermediate', source: 'exec' },
+      { id: outerThread, cwd: '/work/hl-trv-app', source: 'vscode' }],
+  });
+  assert.equal(payload.tmux?.target, '%34');
+  for (const parents of [[], [{ id: parentThread, cwd: '/work/hl-trv-app',
+    source: { subagent: { thread_spawn: { parent_thread_id: reviewThread } } } }]]) {
+    assert.equal(publish({ cwd: '/work/rtm-review-283' }, {
+      panes: reviewPanes, codexThread: reviewThread,
+      session: { cwd: '/work/rtm-review-283', source: { subagent: { thread_spawn: { parent_thread_id: parentThread } } } },
+      parentSessions: parents,
+    }).tmux, undefined);
+  }
 });
 
 test('a known origin that is ambiguous or unavailable never falls back to the tool checkout', () => {

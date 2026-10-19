@@ -71,6 +71,20 @@ async function openNotificationTarget(notification, options = {}) {
     }
   }
   let target = resolveNotificationTmuxTarget(notification);
+  const expectedProject = notification?.metadata?.tmux?.sourceProject || notification?.metadata?.project?.name;
+  let invalidReason;
+  if (target && expectedProject) {
+    try {
+      const checkout = await readNotificationCheckout(target);
+      if (!checkout || path.basename(checkout.root) !== expectedProject) {
+        invalidReason = checkout ? 'source_project_mismatch' : 'source_project_unverified';
+        target = null;
+      }
+    } catch {
+      invalidReason = 'source_project_unverified';
+      target = null;
+    }
+  }
   let recovered;
   if (!target) {
     try {
@@ -78,7 +92,7 @@ async function openNotificationTarget(notification, options = {}) {
         execTmux(['list-panes', '-a', '-F', TMUX_PANE_SNAPSHOT_FORMAT]), listProcesses(),
       ]);
       recovered = await recoverNotificationTarget(notification, parseTmuxPaneSnapshots(snapshot), processes, readNotificationCheckout);
-      if (!recovered.target) return { success: false, reason: recovered.reason };
+      if (!recovered.target) return { success: false, reason: recovered.reason === 'no_target' ? invalidReason || recovered.reason : recovered.reason };
       target = recovered.target;
     } catch {
       return { success: false, reason: 'source_unavailable' };
@@ -86,7 +100,7 @@ async function openNotificationTarget(notification, options = {}) {
   }
   const chainTestApp = options.chainTestApp || notification?.metadata?.chainTestApp || null;
   return jumpToTmuxTarget(target, { chainTestApp,
-    expectedProject: notification?.metadata?.tmux?.sourceProject || notification?.metadata?.project?.name,
+    expectedProject,
     expectedCheckout: recovered?.checkout });
 }
 

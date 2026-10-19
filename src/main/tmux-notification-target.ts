@@ -18,23 +18,30 @@ export async function recoverNotificationTarget(
   readCheckout: (paneId: string) => Promise<NotificationCheckout | null>,
 ): Promise<RecoveredTarget> {
   const project = notification.metadata?.project;
+  const sourceProject = notification.metadata?.tmux?.sourceProject;
+  const projectName = sourceProject || project?.name;
   const agent = notification.title.match(/^(Codex|Claude|Gemini|OpenCode|Aider|Cursor|Amp)\b/i)?.[1].toLowerCase();
-  if (!project?.name || !project.branch || !agent) return { reason: 'no_target' };
+  if (!projectName || (!sourceProject && !project?.branch) || !agent) return { reason: 'no_target' };
   const detected = detectAiPanes(panes, processOutput);
-  const matching: { target: string; checkout: NotificationCheckout }[] = [];
-  let unverified = false;
-  for (const [target, name] of detected) {
-    if (name.toLowerCase() !== agent) continue;
-    try {
-      const checkout = await readCheckout(target);
-      if (checkout && path.basename(checkout.root) === project.name && checkout.branch === project.branch) {
-        matching.push({ target, checkout });
+  // Prefer the original agent; a single remaining shell is still a destination.
+  const groups = [panes.filter(pane => detected.get(pane.id)?.toLowerCase() === agent),
+    panes.filter(pane => !detected.has(pane.id))];
+  for (const group of groups) {
+    const matching: { target: string; checkout: NotificationCheckout }[] = [];
+    let unverified = false;
+    for (const { id: target } of group) {
+      try {
+        const checkout = await readCheckout(target);
+        if (checkout && path.basename(checkout.root) === projectName && (sourceProject || checkout.branch === project?.branch)) {
+          matching.push({ target, checkout });
+        }
+      } catch {
+        unverified = true;
       }
-    } catch {
-      unverified = true;
     }
+    if (matching.length > 1) return { reason: 'source_ambiguous' };
+    if (unverified) return { reason: 'source_project_unverified' };
+    if (matching[0]) return matching[0];
   }
-  if (matching.length > 1) return { reason: 'source_ambiguous' };
-  if (unverified) return { reason: 'source_project_unverified' };
-  return matching[0] ?? { reason: 'source_unavailable' };
+  return { reason: 'source_unavailable' };
 }

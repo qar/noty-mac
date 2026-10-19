@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 function navigation({ project = 'noty-mac', root = '/work/noty-mac', gitFails = false, tmuxUnavailable = false,
-  target = '%31', branch, duplicateAgent = false, branchChanges = false } = {}) {
+  target = '%31', branch, duplicateAgent = false, branchChanges = false, staleTarget = false } = {}) {
   const state = { notifications: [{ id: 'one', channelId: 'ai', title: 'Codex update', read: false, message: 'Done',
     metadata: { ...(target ? { tmux: { target } } : {}), ...(project ? { project: { name: project, branch } } : {}) } }] };
   const commands = [];
@@ -23,9 +23,10 @@ function navigation({ project = 'noty-mac', root = '/work/noty-mac', gitFails = 
         if (args[0] === 'list-panes') return callback(tmuxUnavailable ? new Error('No tmux server') : null,
           args.at(-1).includes('#{pane_pid}') ? '%89\t100\thl-test-reports\tmain\t0\n%90\t200\thl-test-reports\tmain\t1\n' : '%31\thl-sensor\n%48\tnoty-mac\n');
         if (file.endsWith('git')) return callback(gitFails ? new Error('Not a repository') : null,
-          `${args.includes('branch') ? (branchChanges && branchReads++ > 0 ? 'changed' : branch) : root}\n`);
+          `${args.includes('branch') ? (branchChanges && branchReads++ > 0 ? 'changed' : branch) : args[1] === '/work/reused' ? '/work/reused' : root}\n`);
         if (args[0] === 'display-message') {
-          const value = args.at(-1) === '#{pane_current_path}' ? `${root}/src` : args.at(-1) === '#S' ? 'session' : 'session:1';
+          if (staleTarget === 'missing' && args.includes(target)) return callback(new Error('Pane does not exist'));
+          const value = args.at(-1) === '#{pane_current_path}' ? (staleTarget && args.includes(target) ? '/work/reused' : `${root}/src`) : args.at(-1) === '#S' ? 'session' : 'session:1';
           return callback(null, `${value}\n`);
         }
         if (args[0] === 'list-clients') return callback(null, '/dev/ttys001\tsession\txterm-kitty\t123\n');
@@ -60,6 +61,24 @@ test('target recovery never guesses between multiple agents in the same checkout
   assert.equal((await app.jump()).reason, 'source_ambiguous');
   assert.equal(app.commands.some(command => command.includes('select-pane') || command[0] === '/usr/bin/open'), false);
   assert.equal(app.state.notifications[0].read, false);
+});
+
+test('a pane ID reused after tmux restart recovers the unique verified source', async () => {
+  for (const staleTarget of [true, 'missing']) {
+    const app = navigation({ project: 'noty-mac', root: '/work/noty-mac', branch: 'main', staleTarget });
+    assert.equal((await app.jump()).success, true);
+    assert.ok(app.commands.some(c => c.includes('select-pane') && c.includes('%89')));
+    assert.ok(!app.commands.some(c => c.includes('select-pane') && c.includes('%31')));
+    assert.equal(app.state.notifications[0].read, true);
+  }
+});
+
+test('restart recovery uses the source project instead of the child worktree and branch', async () => {
+  const app = navigation({ project: 'rtm-trv-1038', root: '/work/hl-trv-app', branch: 'main', staleTarget: true });
+  app.state.notifications[0].metadata.tmux.sourceProject = 'hl-trv-app';
+  app.state.notifications[0].metadata.project.branch = 'bugfix/offline';
+  assert.equal((await app.jump()).success, true);
+  assert.ok(app.commands.some(c => c.includes('select-pane') && c.includes('%89')));
 });
 
 test('a recovered pane is revalidated before navigation if its checkout changes', async () => {
@@ -117,8 +136,9 @@ test('source-project metadata cannot dismiss a different source or jump to a reu
 
   const reused = navigation({ project: 'rtm-review-283', root: '/work/rtm-review-283', target: '%34' });
   reused.state.notifications[0].metadata.tmux.sourceProject = 'hl-trv-app';
-  assert.equal((await reused.jump()).reason, 'source_project_mismatch');
+  assert.equal((await reused.jump()).reason, 'source_unavailable');
   assert.equal(reused.state.notifications[0].read, false);
+  assert.equal(reused.commands.some(c => c.includes('select-pane')), false);
 });
 
 test('legacy targets without project metadata remain jumpable', async () => {
