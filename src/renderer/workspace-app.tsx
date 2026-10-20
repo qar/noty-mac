@@ -351,7 +351,7 @@ export function WorkspaceApp() {
   return (
     <>
       <div className={`app-shell${shellStateClass}`}>
-        {activeView === 'dashboard' || activeView === 'notifications' ? (
+        {activeView === 'dashboard' ? (
           <DashboardRail
             activeView={activeView}
             onDashboard={() => showDashboardView('dashboard')}
@@ -360,7 +360,7 @@ export function WorkspaceApp() {
             onWorkflows={() => showDashboardView('workflow')}
             onSettings={() => showDashboardView('settings')}
           />
-        ) : activeView === 'settings' ? (
+        ) : activeView === 'notifications' ? null : activeView === 'settings' ? (
           <SettingsSidebar
             activeTab={settingsTab}
             onSelect={setSettingsTab}

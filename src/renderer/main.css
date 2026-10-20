@@ -128,10 +128,7 @@ code {
   grid-template-columns: 104px minmax(0, 1fr);
 }
 
-.app-shell.is-notifications { position: relative; --title-bar-height: 40px; grid-template-columns: 52px minmax(0, 1fr); }
-.is-notifications .dashboard-rail { padding-top: calc(var(--title-bar-height) + 6px); }
-.is-notifications .dashboard-rail-button { width: 40px; height: 40px; }
-.is-notifications .dashboard-rail-button.is-active::before { left: -6px; }
+.app-shell.is-notifications { position: relative; --title-bar-height: 40px; grid-template-columns: minmax(0, 1fr); }
 body:has(.is-notifications) .title-bar-drag { display: none; }
 
 .dashboard-rail {
