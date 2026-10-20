@@ -9,6 +9,8 @@ function navigation({ project = 'noty-mac', root = '/work/noty-mac', gitFails = 
     metadata: { ...(target ? { tmux: { target } } : {}), ...(project ? { project: { name: project, branch } } : {}) } }] };
   const commands = [];
   const handlers = new Map();
+  const trayMessages = [], desktopMessages = [];
+  const notificationWindow = messages => ({ isDestroyed: () => false, webContents: { send: (...args) => messages.push(args) } });
   let branchReads = 0;
   const context = {
     module: { exports: {} }, __dirname: '/app/dist/main', process, console, setTimeout,
@@ -36,15 +38,28 @@ function navigation({ project = 'noty-mac', root = '/work/noty-mac', gitFails = 
       if (name === './notification-core') return require('../dist/main/notification-core');
       if (name === './tmux-notification-target') return require('../dist/main/tmux-notification-target');
       if (name === './tmux-workspace') return require('../dist/main/tmux-workspace');
-      if (name === './window') return { getWindow: () => null };
+      if (name === './window') return { getWindow: () => notificationWindow(trayMessages) };
+      if (name === './main-window') return { getMainWindow: () => notificationWindow(desktopMessages) };
       if (name.startsWith('./')) return {};
       return require(name);
     },
   };
   vm.runInNewContext(fs.readFileSync(require.resolve('../dist/main/index'), 'utf8') + '\nupdateTrayIcon = () => {}; setupIPC();', context);
-  return { commands, state, jump: (options) => handlers.get('jump-to-notification-target')({}, 'one', options),
+  return { commands, state, handlers, trayMessages, desktopMessages, jump: (options) => handlers.get('jump-to-notification-target')({}, 'one', options),
     notifications: () => handlers.get('get-notifications')() };
 }
+
+test('navigation, dismissal and restore update both reminder windows from the same store', async () => {
+  const app = navigation();
+  assert.equal((await app.jump()).success, true);
+  assert.equal(app.state.notifications[0].read, true);
+  app.handlers.get('set-notifications-dismissed')({}, ['one'], false);
+  assert.equal(app.state.notifications[0].read, false);
+  app.handlers.get('mark-as-read')({}, 'one');
+  assert.equal(app.state.notifications[0].read, true);
+  assert.deepEqual(app.trayMessages, [['notifications-updated'], ['notifications-updated'], ['notifications-updated']]);
+  assert.deepEqual(app.desktopMessages, app.trayMessages);
+});
 
 test('a historical targetless reminder recovers the unique matching project and branch agent', async () => {
   const app = navigation({ project: 'hl-test-reports', root: '/work/hl-test-reports', branch: 'hl-test-reports', target: null });

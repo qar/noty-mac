@@ -23,6 +23,7 @@ import {
 import { POLL_INTERVAL_MS } from './workspace-ui';
 import type { DashboardView } from './renderer-api';
 import { WorkflowView } from './components/workflow-view';
+import { NotificationList } from './notification-list';
 
 type LoadState = 'loading' | 'ready' | 'error';
 
@@ -133,7 +134,7 @@ export function WorkspaceApp() {
   }, []);
 
   useEffect(() => {
-    if (!workspaceApi) return;
+    if (!workspaceApi || activeView === 'notifications') return;
     void refresh();
     void refreshAiPanes();
     const unsubscribe = workspaceApi.onUpdated(() => {
@@ -148,7 +149,7 @@ export function WorkspaceApp() {
       window.clearInterval(poll);
       unsubscribe?.();
     };
-  }, [refresh, refreshAiPanes]);
+  }, [refresh, refreshAiPanes, activeView]);
 
   useEffect(() => {
     if (!projectsApi) return;
@@ -165,7 +166,7 @@ export function WorkspaceApp() {
     if (!dashboardApi) return;
     let active = true;
     const navigate = (view: DashboardView, tab?: 'general' | 'channels'): void => {
-      if (!active || !['dashboard', 'workspace', 'workflow', 'settings'].includes(view)) return;
+      if (!active || !['dashboard', 'workspace', 'workflow', 'settings', 'notifications'].includes(view)) return;
       setActiveView(view);
       if (view === 'settings' && tab) setSettingsTab(tab);
       if (view !== 'workspace') {
@@ -335,7 +336,9 @@ export function WorkspaceApp() {
         ? 'error'
         : 'empty';
   const shellStateClass =
-    activeView === 'dashboard'
+    activeView === 'notifications'
+      ? ' is-notifications'
+      : activeView === 'dashboard'
       ? ' is-dashboard'
       : activeView === 'settings'
       ? ' is-settings'
@@ -348,8 +351,11 @@ export function WorkspaceApp() {
   return (
     <>
       <div className={`app-shell${shellStateClass}`}>
-        {activeView === 'dashboard' ? (
+        {activeView === 'dashboard' || activeView === 'notifications' ? (
           <DashboardRail
+            activeView={activeView}
+            onDashboard={() => showDashboardView('dashboard')}
+            onNotifications={() => showDashboardView('notifications')}
             onWorkspaces={() => showDashboardView('workspace')}
             onWorkflows={() => showDashboardView('workflow')}
             onSettings={() => showDashboardView('settings')}
@@ -367,12 +373,15 @@ export function WorkspaceApp() {
             loadState={projectLoadState}
             onSelect={selectProject}
             onDashboard={() => showDashboardView('dashboard')}
+            onNotifications={() => showDashboardView('notifications')}
             onSettings={() => showDashboardView('settings')}
             onWorkflows={() => showDashboardView('workflow')}
             workflowActive={activeView === 'workflow'}
           />
         )}
-        {activeView === 'dashboard' ? (
+        {activeView === 'notifications' ? (
+          <NotificationList desktop />
+        ) : activeView === 'dashboard' ? (
           <AiDashboard
             panes={aiPanes}
             loadState={aiLoadState}
