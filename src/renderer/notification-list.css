@@ -76,3 +76,11 @@
 .notifications .empty-state p { margin-top: 12px; }
 .notifications .notification-list::-webkit-scrollbar { width: 6px; }
 .notifications .notification-list::-webkit-scrollbar-thumb { background: var(--notification-border); }
+.notifications .notification-confirm { width: min(360px, calc(100vw - 32px)); max-height: calc(100vh - 32px); margin: auto; padding: 20px; border: 1px solid var(--notification-border); border-radius: 6px; background: var(--notification-surface); color: var(--notification-text); -webkit-app-region: no-drag; }
+.notifications .notification-confirm::backdrop { background: rgba(0, 0, 0, 0.5); }
+.notifications .notification-confirm h2 { margin: 0 0 12px; font-size: 15px; font-weight: 600; }
+.notifications .notification-confirm p { margin: 0; color: var(--notification-muted); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.notifications .notification-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.notifications .notification-confirm-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 6px 12px; border: 1px solid var(--notification-border); border-radius: 3px; background: var(--notification-raised); color: var(--notification-text); font: inherit; cursor: pointer; }
+.notifications .notification-confirm-actions button:hover { border-color: var(--notification-accent); }
+.notifications .notification-confirm-actions .notification-confirm-submit { color: var(--notification-accent); }

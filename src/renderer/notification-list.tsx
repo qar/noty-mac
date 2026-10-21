@@ -30,6 +30,7 @@ export function NotificationList({ desktop = false }: { desktop?: boolean }) {
   const [error, setError] = useState('');
   const [selection, setSelection] = useState<{ id: string | null; version: number }>({ id: null, version: 0 });
   const [pinned, setPinned] = useState(false);
+  const [dismissAllIds, setDismissAllIds] = useState<string[] | null>(null);
   const [, setClock] = useState(0);
   const requestId = useRef(0);
 
@@ -120,7 +121,7 @@ export function NotificationList({ desktop = false }: { desktop?: boolean }) {
         {desktop
           ? <button className="icon-btn" title={pinned ? '取消置顶' : '窗口置顶'} aria-label="窗口置顶" aria-pressed={pinned} disabled={Boolean(busy)} onClick={() => void perform('pin', async () => setPinned(await window.api.desktop.setPinned(!pinned)))}>{pinned ? <PinOff /> : <Pin />}</button>
           : <button className="icon-btn" title="在主窗口查看" aria-label="在主窗口查看" onClick={() => window.api.openNotifications()}><PanelRightOpen /></button>}
-        {view === 'active' ? <button className="icon-btn" title="收起全部提醒" aria-label="收起全部提醒" disabled={Boolean(busy) || !pending.length} onClick={() => void perform('all', () => window.api.setNotificationsDismissed(pending.map(item => item.id), true))}><Archive /></button> : null}
+        {view === 'active' ? <button className="icon-btn" title="收起全部提醒" aria-label="收起全部提醒" disabled={Boolean(busy) || !pending.length} onClick={() => setDismissAllIds(pending.map(item => item.id))}><Archive /></button> : null}
         <button className="icon-btn" title="新建通知" aria-label="新建通知" onClick={() => window.api.openNotificationSettings()}><BellPlus /></button>
         <button className="icon-btn" title="设置" aria-label="设置" onClick={() => window.api.openSettings()}><Settings /></button>
       </div>
@@ -203,7 +204,30 @@ export function NotificationList({ desktop = false }: { desktop?: boolean }) {
         </article>;
       })}
     </main>
+    {dismissAllIds ? <DismissAllDialog count={dismissAllIds.length} onCancel={() => setDismissAllIds(null)} onConfirm={() => {
+      const ids = dismissAllIds;
+      setDismissAllIds(null);
+      void perform('all', () => window.api.setNotificationsDismissed(ids, true));
+    }} /> : null}
   </div>;
+}
+
+function DismissAllDialog({ count, onCancel, onConfirm }: { count: number; onCancel(): void; onConfirm(): void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    return () => { if (dialog?.open) dialog.close(); };
+  }, []);
+
+  return <dialog ref={dialogRef} className="notification-confirm" aria-labelledby="dismiss-all-title" aria-describedby="dismiss-all-description" onCancel={event => { event.preventDefault(); onCancel(); }}>
+    <h2 id="dismiss-all-title">收起全部提醒？</h2>
+    <p id="dismiss-all-description">将把这 {count} 条提醒标记为已读并移至历史。</p>
+    <div className="notification-confirm-actions">
+      <button type="button" autoFocus onClick={onCancel}>取消</button>
+      <button type="button" className="notification-confirm-submit" onClick={onConfirm}><Archive size={14} aria-hidden="true" />确认收起</button>
+    </div>
+  </dialog>;
 }
 
 function formatMessage(item: AppNotification): { text: string; isJson: boolean } {
