@@ -39,6 +39,10 @@
 .notifications .notification-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; padding: 0; background: var(--notification-surface); }
 .notifications .notification-item { margin: 0; padding: 14px 16px; border: 0; border-bottom: 1px solid var(--notification-border); border-radius: 0; background: transparent; cursor: default; }
 .notifications .notification-item:hover { transform: none; background: var(--notification-raised); }
+.notifications .notification-group { border-bottom: 1px solid var(--notification-border); }
+.notifications .notification-group .notification-item { border-bottom: 0; }
+.notifications .notification-group-history > summary { padding: 0 16px 12px; color: var(--notification-faint); font-size: 11px; cursor: pointer; }
+.notifications .notification-group-history > .notification-item { border-top: 1px solid var(--notification-border); }
 .notifications .notification-item.read { opacity: 0.65; }
 .notifications .notification-item.is-selected { box-shadow: inset 3px 0 var(--notification-accent); background: var(--notification-raised); }
 .notifications .notification-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px; }

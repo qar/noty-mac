@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const store = require('./store');
 const NtfyClient = require('./ntfy-client');
 const { channelFromInput, safeWebUrl, isPendingNotification, clearReadNotifications, setNotificationCompleted, setNotificationsDismissed } = require('./notification-core');
+const { groupNotifications, notificationGroupKey, notificationTmuxTarget: resolveNotificationTmuxTarget } = require('./notification-groups');
 const Updater = require('./updater');
 const { toggleWindow, showNotification, getSelectedNotificationId, getWindow } = require('./window');
 const { openMainWindow, hideMainWindow, getMainWindow, destroyMainWindow, getMainWindowView, setMainWindowView, getReminderPinned, setReminderPinned } = require('./main-window');
@@ -35,28 +36,6 @@ function isValidTmuxTarget(target) {
     && target.length <= 128
     && !target.startsWith('-')
     && /^[A-Za-z0-9_.:%@+/-]+$/.test(target);
-}
-
-function extractTmuxTargetFromMessage(message) {
-  if (typeof message !== 'string') {
-    return null;
-  }
-
-  const line = message
-    .split('\n')
-    .find(item => /^\s*(?:🖥\s*)?tmux\s*:/i.test(item));
-
-  if (!line) {
-    return null;
-  }
-
-  const match = line.match(/^\s*(?:🖥\s*)?tmux\s*:\s*([A-Za-z0-9_.:%@+/-]+)\s*$/i);
-  return match ? match[1] : null;
-}
-
-function resolveNotificationTmuxTarget(notification) {
-  return notification?.metadata?.tmux?.target
-    || extractTmuxTargetFromMessage(notification?.message || '');
 }
 
 async function openNotificationTarget(notification, options = {}) {
@@ -649,7 +628,7 @@ function createTray() {
 
 function updateTrayIcon() {
   const notifications = store.get('notifications');
-  const unreadCount = notifications.filter(isPendingNotification).length;
+  const unreadCount = groupNotifications(notifications.filter(isPendingNotification)).length;
 
   tray.setImage(loadTrayTemplateImage());
   tray.setTitle(unreadCount > 0 ? ` ${unreadCount}` : '');
@@ -778,12 +757,10 @@ function setupIPC() {
     if (!notification) return { success: false, reason: '提醒已不存在' };
     options = options && typeof options === 'object' ? options : {};
     const relatedIds = new Set(Array.isArray(options.notificationIds) ? options.notificationIds : []);
-    const target = resolveNotificationTmuxTarget(notification);
-    const ids = notifications.filter(item => item.id === id || (notification.type !== 'plane' && target
-      && relatedIds.has(item.id) && item.type !== 'plane' && item.channelId === notification.channelId
-      && item.metadata?.project?.name === notification.metadata?.project?.name
-      && item.metadata?.tmux?.sourceProject === notification.metadata?.tmux?.sourceProject
-      && resolveNotificationTmuxTarget(item) === target)).map(item => item.id);
+    const groupKey = notificationGroupKey(notification);
+    const ids = notifications.filter(item => item.id === id || (relatedIds.has(item.id)
+      && isPendingNotification(item) === isPendingNotification(notification)
+      && notificationGroupKey(item) === groupKey)).map(item => item.id);
     const result = await openNotificationTarget(notification, options);
     if (result.success) dismissNotifications(ids, true);
     return result;

@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 function navigation({ project = 'noty-mac', root = '/work/noty-mac', gitFails = false, tmuxUnavailable = false,
-  target = '%31', branch, duplicateAgent = false, branchChanges = false, staleTarget = false } = {}) {
+  target = '%31', branch, duplicateAgent = false, branchChanges = false, staleTarget = false, browserFails = false, onOpen } = {}) {
   const state = { notifications: [{ id: 'one', channelId: 'ai', title: 'Codex update', read: false, message: 'Done',
     metadata: { ...(target ? { tmux: { target } } : {}), ...(project ? { project: { name: project, branch } } : {}) } }] };
   const commands = [];
@@ -18,6 +18,7 @@ function navigation({ project = 'noty-mac', root = '/work/noty-mac', gitFails = 
       if (name === 'electron') return {
         app: { on() {}, whenReady: () => ({ then() {} }) },
         ipcMain: { handle: (name, fn) => handlers.set(name, fn), on() {} },
+        shell: { openExternal: async () => { if (browserFails) throw new Error('Browser failed'); onOpen?.(state); } },
       };
       if (name === 'child_process') return { execFile(file, args, options, callback) {
         commands.push([file, ...args]);
@@ -36,6 +37,7 @@ function navigation({ project = 'noty-mac', root = '/work/noty-mac', gitFails = 
       } };
       if (name === './store') return { get: key => structuredClone(state[key]), set: (key, value) => { state[key] = value; } };
       if (name === './notification-core') return require('../dist/main/notification-core');
+      if (name === './notification-groups') return require('../dist/main/notification-groups');
       if (name === './tmux-notification-target') return require('../dist/main/tmux-notification-target');
       if (name === './tmux-workspace') return require('../dist/main/tmux-workspace');
       if (name === './window') return { getWindow: () => notificationWindow(trayMessages) };
@@ -59,6 +61,28 @@ test('navigation, dismissal and restore update both reminder windows from the sa
   assert.equal(app.state.notifications[0].read, true);
   assert.deepEqual(app.trayMessages, [['notifications-updated'], ['notifications-updated'], ['notifications-updated']]);
   assert.deepEqual(app.desktopMessages, app.trayMessages);
+});
+
+test('Plane navigation acknowledges only requested messages from the same task and preserves later arrivals', async () => {
+  const app = navigation({ onOpen: state => state.notifications.push({ ...state.notifications[0], id: 'arrived-during-open' }) });
+  const item = { id: 'one', type: 'plane', channelId: 'plane', read: false, metadata: { plane: {
+    issueId: 'issue-a', workspaceSlug: 'rti-tek', url: 'https://example.com/rti-tek/browse/TRV-1/',
+  } } };
+  app.state.notifications = [item, { ...item, id: 'same' }, { ...item, id: 'not-requested' },
+    { ...item, id: 'other', metadata: { plane: { ...item.metadata.plane, issueId: 'issue-b' } } },
+    { ...item, id: 'channel', channelId: 'other' }];
+  assert.equal((await app.jump({ notificationIds: ['one', 'same', 'other', 'channel'] })).success, true);
+  assert.deepEqual(app.state.notifications.filter(item => item.read).map(item => item.id), ['one', 'same']);
+});
+
+test('failed Plane navigation retains every message in the group', async () => {
+  const app = navigation({ browserFails: true });
+  const item = { id: 'one', type: 'plane', channelId: 'plane', read: false, metadata: { plane: {
+    issueId: 'issue-a', workspaceSlug: 'rti-tek', url: 'https://example.com/rti-tek/browse/TRV-1/',
+  } } };
+  app.state.notifications = [item, { ...item, id: 'same' }];
+  assert.equal((await app.jump({ notificationIds: ['one', 'same'] })).success, false);
+  assert.ok(app.state.notifications.every(item => !item.read && !item.completedAt));
 });
 
 test('a historical targetless reminder recovers the unique matching project and branch agent', async () => {
