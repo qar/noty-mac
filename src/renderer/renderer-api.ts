@@ -20,7 +20,7 @@ import type { CompleteWorkflowTaskInput, WorkflowDefinition, WorkflowRun, Workfl
 
 export type { AppPreferences } from '../main/settings-types';
 
-export type DashboardView = 'dashboard' | 'workspace' | 'workflow' | 'settings';
+export type DashboardView = import('../main/main-window').MainWindowView;
 
 export interface JumpOutcome {
   success: boolean;
@@ -120,6 +120,11 @@ export interface AppApi {
   onUpdateDownloadProgress(callback: (progress: number) => void): () => void;
   openSettings(): void;
   openNotificationSettings(): void;
+  openNotifications(): void;
+  desktop: {
+    getPinned(): Promise<boolean>;
+    setPinned(pinned: boolean): Promise<boolean>;
+  };
   dashboard: {
     getInitialView(): Promise<DashboardView>;
     getSettingsTab(): Promise<'general' | 'channels'>;

@@ -41,6 +41,11 @@ contextBridge.exposeInMainWorld('api', {
   closeWindow: () => ipcRenderer.send('close-window'),
   openSettings: () => ipcRenderer.send('open-settings'),
   openNotificationSettings: () => ipcRenderer.send('open-notification-settings'),
+  openNotifications: () => ipcRenderer.send('open-notifications'),
+  desktop: {
+    getPinned: () => ipcRenderer.invoke('desktop:get-pinned'),
+    setPinned: (pinned) => ipcRenderer.invoke('desktop:set-pinned', pinned),
+  },
 
   // 监听新通知
   onNewNotification: (callback) => {

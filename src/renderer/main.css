@@ -128,6 +128,9 @@ code {
   grid-template-columns: 104px minmax(0, 1fr);
 }
 
+.app-shell.is-notifications { position: relative; --title-bar-height: 40px; grid-template-columns: minmax(0, 1fr); }
+body:has(.is-notifications) .title-bar-drag { display: none; }
+
 .dashboard-rail {
   display: flex;
   flex-direction: column;
