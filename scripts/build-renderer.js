@@ -43,7 +43,7 @@ async function main() {
     path.join(srcDir, 'main.css'),
     path.join(outDir, 'main.css')
   );
-  for (const file of ['index.html', 'styles.css', 'theme.css']) {
+  for (const file of ['index.html', 'styles.css', 'theme.css', 'notification-list.css']) {
     await fs.copyFile(path.join(srcDir, file), path.join(outDir, file));
   }
 }

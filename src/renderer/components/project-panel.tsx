@@ -1,4 +1,4 @@
-import { Folder, LayoutDashboard, LayoutGrid, Settings, Workflow } from 'lucide-react';
+import { Bell, Folder, LayoutDashboard, LayoutGrid, Settings, Workflow } from 'lucide-react';
 import type { Project } from '../../main/types';
 
 export const ALL_PROJECTS_ID = '__all_projects__';
@@ -9,6 +9,7 @@ interface ProjectPanelProps {
   loadState: 'loading' | 'ready' | 'error';
   onSelect(id: string): void;
   onDashboard(): void;
+  onNotifications(): void;
   onSettings(): void;
   onWorkflows(): void;
   workflowActive: boolean;
@@ -20,6 +21,7 @@ export function ProjectPanel({
   loadState,
   onSelect,
   onDashboard,
+  onNotifications,
   onSettings,
   onWorkflows,
   workflowActive,
@@ -84,6 +86,9 @@ export function ProjectPanel({
         ) : null}
       </ul>
       <footer className="project-panel-footer">
+        <button type="button" className="project-settings-button" onClick={onNotifications}>
+          <Bell aria-hidden="true" /><span>提醒</span>
+        </button>
         <button
           type="button"
           className={`project-settings-button${workflowActive ? ' is-active' : ''}`}

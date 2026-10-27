@@ -1,6 +1,20 @@
 const Store = require('electron-store');
 
 const schema = {
+  desktopWindow: {
+    type: 'object',
+    default: { view: 'dashboard', pinned: false },
+    properties: {
+      view: { type: 'string', enum: ['dashboard', 'workspace', 'workflow', 'settings', 'notifications'] },
+      pinned: { type: 'boolean' },
+      ...Object.fromEntries(['reminderBounds', 'workspaceBounds'].map(key => [key, {
+        type: 'object',
+        properties: { x: { type: 'number' }, y: { type: 'number' }, width: { type: 'number', minimum: 1 }, height: { type: 'number', minimum: 1 } },
+        required: ['x', 'y', 'width', 'height'],
+      }])),
+    },
+    required: ['view', 'pinned'],
+  },
   channels: {
     type: 'array',
     default: [],

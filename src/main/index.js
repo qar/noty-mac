@@ -5,9 +5,10 @@ const crypto = require('crypto');
 const store = require('./store');
 const NtfyClient = require('./ntfy-client');
 const { channelFromInput, safeWebUrl, isPendingNotification, clearReadNotifications, setNotificationCompleted, setNotificationsDismissed } = require('./notification-core');
+const { groupNotifications, notificationGroupKey, notificationTmuxTarget: resolveNotificationTmuxTarget } = require('./notification-groups');
 const Updater = require('./updater');
 const { toggleWindow, showNotification, getSelectedNotificationId, getWindow } = require('./window');
-const { openMainWindow, hideMainWindow, getMainWindow, destroyMainWindow } = require('./main-window');
+const { openMainWindow, hideMainWindow, getMainWindow, destroyMainWindow, getMainWindowView, setMainWindowView, getReminderPinned, setReminderPinned } = require('./main-window');
 const workspace = require('./workspace');
 const { probeTmux } = require('./tmux-probe');
 const { registerWorkspaceIpc } = require('./ipc-workspace');
@@ -35,28 +36,6 @@ function isValidTmuxTarget(target) {
     && target.length <= 128
     && !target.startsWith('-')
     && /^[A-Za-z0-9_.:%@+/-]+$/.test(target);
-}
-
-function extractTmuxTargetFromMessage(message) {
-  if (typeof message !== 'string') {
-    return null;
-  }
-
-  const line = message
-    .split('\n')
-    .find(item => /^\s*(?:🖥\s*)?tmux\s*:/i.test(item));
-
-  if (!line) {
-    return null;
-  }
-
-  const match = line.match(/^\s*(?:🖥\s*)?tmux\s*:\s*([A-Za-z0-9_.:%@+/-]+)\s*$/i);
-  return match ? match[1] : null;
-}
-
-function resolveNotificationTmuxTarget(notification) {
-  return notification?.metadata?.tmux?.target
-    || extractTmuxTargetFromMessage(notification?.message || '');
 }
 
 async function openNotificationTarget(notification, options = {}) {
@@ -126,7 +105,13 @@ function publicChannels() {
 
 function notificationsChanged() {
   updateTrayIcon();
-  getWindow()?.webContents.send('notifications-updated');
+  sendToNotificationWindows('notifications-updated');
+}
+
+function sendToNotificationWindows(event, ...args) {
+  for (const window of [getWindow(), getMainWindow()]) {
+    if (window && !window.isDestroyed()) window.webContents.send(event, ...args);
+  }
 }
 
 function dismissNotifications(ids, dismissed) {
@@ -411,7 +396,6 @@ async function jumpToTmuxSession(sessionName) {
 let tray = null;
 let ntfyClient = null;
 let updater = null;
-let requestedDashboardView = 'dashboard';
 
 // 防止应用退出
 app.on('window-all-closed', (e) => {
@@ -449,7 +433,9 @@ app.whenReady().then(async () => {
   registerSettingsIpc();
   registerProjectsIpc();
   registerWorkflowIpc();
-  if (process.argv.includes('--show-main-window')) {
+  if (process.argv.includes('--show-notifications')) {
+    openNotificationsView();
+  } else if (process.argv.includes('--show-main-window')) {
     openMainWindow();
   }
   updateTrayIcon();
@@ -465,10 +451,7 @@ app.whenReady().then(async () => {
     updateTrayIcon();
 
     // 通知渲染进程
-    const window = getWindow();
-    if (window) {
-      window.webContents.send('new-notification', notification);
-    }
+    sendToNotificationWindows('new-notification', notification);
   });
 
   ntfyClient.on('notification-clicked', (notification) => showNotification(tray, notification.id));
@@ -645,7 +628,7 @@ function createTray() {
 
 function updateTrayIcon() {
   const notifications = store.get('notifications');
-  const unreadCount = notifications.filter(isPendingNotification).length;
+  const unreadCount = groupNotifications(notifications.filter(isPendingNotification)).length;
 
   tray.setImage(loadTrayTemplateImage());
   tray.setTitle(unreadCount > 0 ? ` ${unreadCount}` : '');
@@ -655,7 +638,7 @@ let requestedSettingsTab = 'general';
 
 function openSettingsView(tab = 'general') {
   requestedSettingsTab = tab;
-  requestedDashboardView = 'settings';
+  setMainWindowView('settings');
   const window = openMainWindow();
   const navigate = () => {
     if (!window.isDestroyed()) {
@@ -668,6 +651,15 @@ function openSettingsView(tab = 'general') {
   } else {
     navigate();
   }
+}
+
+function openNotificationsView() {
+  setMainWindowView('notifications');
+  const window = openMainWindow();
+  const navigate = () => { if (!window.isDestroyed()) window.webContents.send('dashboard:navigate', 'notifications'); };
+  if (window.webContents.isLoadingMainFrame()) window.webContents.once('did-finish-load', navigate);
+  else navigate();
+  getWindow()?.hide();
 }
 
 function setupIPC() {
@@ -705,7 +697,7 @@ function setupIPC() {
     if (notification) {
       notification.read = true;
       store.set('notifications', notifications);
-      updateTrayIcon();
+      notificationsChanged();
     }
     return notifications;
   });
@@ -715,7 +707,7 @@ function setupIPC() {
     const notifications = store.get('notifications');
     notifications.forEach(n => { n.read = true; });
     store.set('notifications', notifications);
-    updateTrayIcon();
+    notificationsChanged();
     return notifications;
   });
 
@@ -732,7 +724,7 @@ function setupIPC() {
     });
     if (changed) {
       store.set('notifications', notifications);
-      updateTrayIcon();
+      notificationsChanged();
     }
     return notifications;
   });
@@ -765,12 +757,10 @@ function setupIPC() {
     if (!notification) return { success: false, reason: '提醒已不存在' };
     options = options && typeof options === 'object' ? options : {};
     const relatedIds = new Set(Array.isArray(options.notificationIds) ? options.notificationIds : []);
-    const target = resolveNotificationTmuxTarget(notification);
-    const ids = notifications.filter(item => item.id === id || (notification.type !== 'plane' && target
-      && relatedIds.has(item.id) && item.type !== 'plane' && item.channelId === notification.channelId
-      && item.metadata?.project?.name === notification.metadata?.project?.name
-      && item.metadata?.tmux?.sourceProject === notification.metadata?.tmux?.sourceProject
-      && resolveNotificationTmuxTarget(item) === target)).map(item => item.id);
+    const groupKey = notificationGroupKey(notification);
+    const ids = notifications.filter(item => item.id === id || (relatedIds.has(item.id)
+      && isPendingNotification(item) === isPendingNotification(notification)
+      && notificationGroupKey(item) === groupKey)).map(item => item.id);
     const result = await openNotificationTarget(notification, options);
     if (result.success) dismissNotifications(ids, true);
     return result;
@@ -805,6 +795,7 @@ function setupIPC() {
     if (ntfyClient) {
       ntfyClient.subscribeToChannel(channel);
     }
+    notificationsChanged();
 
     return publicChannels();
   });
@@ -834,6 +825,7 @@ function setupIPC() {
     if (ntfyClient) {
       ntfyClient.unsubscribeFromChannel(id);
     }
+    notificationsChanged();
 
     return publicChannels();
   });
@@ -846,11 +838,11 @@ function setupIPC() {
     }
   });
 
-  ipcMain.handle('dashboard:get-initial-view', () => requestedDashboardView);
+  ipcMain.handle('dashboard:get-initial-view', () => getMainWindowView());
   ipcMain.handle('dashboard:get-settings-tab', () => requestedSettingsTab);
   ipcMain.on('dashboard:set-view', (event, view) => {
-    if (view === 'dashboard' || view === 'workspace' || view === 'workflow' || view === 'settings') {
-      requestedDashboardView = view;
+    if (view === 'dashboard' || view === 'workspace' || view === 'workflow' || view === 'settings' || view === 'notifications') {
+      setMainWindowView(view);
     }
   });
 
@@ -859,6 +851,12 @@ function setupIPC() {
     openSettingsView();
   });
   ipcMain.on('open-notification-settings', () => openSettingsView('channels'));
+  ipcMain.on('open-notifications', () => openNotificationsView());
+  ipcMain.handle('desktop:get-pinned', () => getReminderPinned());
+  ipcMain.handle('desktop:set-pinned', (_event, pinned) => {
+    if (typeof pinned !== 'boolean') throw new Error('窗口置顶状态无效');
+    return setReminderPinned(pinned);
+  });
 
   // 获取应用版本
   ipcMain.handle('get-app-version', () => {
