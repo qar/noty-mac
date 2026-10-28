@@ -120,13 +120,13 @@ export function NotificationList({ desktop = false }: { desktop?: boolean }) {
     const dismissed = !isPendingNotification(item);
     const grouped = groupHead && group.length > 1;
     const dismissLabel = dismissed ? (grouped ? '恢复本组提醒' : '恢复提醒') : grouped ? '收起本组提醒' : '收起提醒';
-    return <article key={item.id} id={`notification-${item.id}`} data-notification-id={item.id} tabIndex={-1} className={`notification-item ${dismissed ? 'read' : ''} ${item.id === selection.id ? 'is-selected' : ''}`}>
+    return <article key={item.id} id={`notification-${item.id}`} data-notification-id={item.id} data-keyboard-item tabIndex={-1} className={`notification-item ${dismissed ? 'read' : ''} ${item.id === selection.id ? 'is-selected' : ''}`}>
       <div className="notification-header">
         <span className="notification-type">{plane ? 'RtiTek Plane' : 'Tmux AI agent'}{grouped ? <span className="notification-count">{group.length} 条</span> : null}</span>
         <time className="notification-time" dateTime={new Date(item.timestamp).toISOString()} title={`收到于 ${new Date(item.timestamp).toLocaleString()}`}>{formatTime(item.timestamp)}</time>
       </div>
       <div className="notification-heading">
-        <button className={`notification-open${plane ? ' notification-open-plane' : ''}`} title={title} disabled={Boolean(busy)} onClick={() => open(item, group)} aria-label={plane ? `打开任务：${title}` : title}>
+        <button data-keyboard-open className={`notification-open${plane ? ' notification-open-plane' : ''}`} title={title} disabled={Boolean(busy)} onClick={() => open(item, group)} aria-label={plane ? `打开任务：${title}` : title}>
           {plane ? <><span className="notification-title">{title}</span>{target ? <ExternalLink size={12} aria-hidden="true" /> : null}</>
             : <span className="notification-title">{title}{target ? <ExternalLink size={12} /> : null}</span>}
         </button>

@@ -1,0 +1,30 @@
+.keyboard-hints {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+}
+.keyboard-hint {
+  position: fixed;
+  box-sizing: border-box;
+  min-width: 18px;
+  height: 20px;
+  padding: 0 3px;
+  border: 1px solid #785a1a;
+  border-radius: 3px;
+  background: #ffe39a;
+  color: #201a0b;
+  box-shadow: 0 1px 3px #0006;
+  font: 700 12px/18px ui-monospace, "SF Mono", Menlo, monospace;
+  letter-spacing: 0;
+  text-align: center;
+}
+[data-keyboard-item]:focus-visible {
+  outline: 2px solid #d9b76e;
+  outline-offset: -2px;
+}
+.notifications .notification-item:focus-visible {
+  background: var(--notification-raised);
+  box-shadow: inset 3px 0 var(--notification-accent);
+}

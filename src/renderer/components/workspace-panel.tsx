@@ -112,6 +112,7 @@ function WorkspaceListItem({
   return (
     <li
       className={`workspace-list-item${active ? ' is-active' : ''}`}
+      data-keyboard-item
       role="option"
       tabIndex={0}
       aria-selected={active}

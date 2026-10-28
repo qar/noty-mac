@@ -85,6 +85,7 @@ export function AiDashboard({ panes, loadState, changedPaneIds, onJump }: AiDash
               return (
                 <button
                   key={item.pane.id}
+                  data-keyboard-item
                   type="button"
                   className={`ai-pane-tile${compact ? ' is-compact' : ''}${tiny ? ' is-tiny' : ''}`}
                   title={`${item.agentName} · ${item.pane.sessionName} / ${item.pane.windowName} / ${item.pane.id}${item.status ? '' : ' · AI 进程运行中，尚无状态上报'}`}
