@@ -14,9 +14,10 @@ function navigation({ project = 'noty-mac', root = '/work/noty-mac', gitFails = 
   let branchReads = 0;
   const context = {
     module: { exports: {} }, __dirname: '/app/dist/main', process, console, setTimeout,
+    database: require('./helpers/notification-repository')(state),
     require(name) {
       if (name === 'electron') return {
-        app: { on() {}, whenReady: () => ({ then() {} }) },
+        app: { on() {}, whenReady: () => new Promise(() => {}) },
         ipcMain: { handle: (name, fn) => handlers.set(name, fn), on() {} },
         shell: { openExternal: async () => { if (browserFails) throw new Error('Browser failed'); onOpen?.(state); } },
       };
@@ -47,7 +48,7 @@ function navigation({ project = 'noty-mac', root = '/work/noty-mac', gitFails = 
       return require(name);
     },
   };
-  vm.runInNewContext(fs.readFileSync(require.resolve('../dist/main/index'), 'utf8') + '\nupdateTrayIcon = () => {}; setupIPC();', context);
+  vm.runInNewContext(fs.readFileSync(require.resolve('../dist/main/index'), 'utf8') + '\nnotificationDatabase = database; updateTrayIcon = async () => {}; setupIPC();', context);
   return { commands, state, handlers, trayMessages, desktopMessages, jump: (options) => handlers.get('jump-to-notification-target')({}, 'one', options),
     notifications: () => handlers.get('get-notifications')() };
 }
@@ -56,9 +57,9 @@ test('navigation, dismissal and restore update both reminder windows from the sa
   const app = navigation();
   assert.equal((await app.jump()).success, true);
   assert.equal(app.state.notifications[0].read, true);
-  app.handlers.get('set-notifications-dismissed')({}, ['one'], false);
+  await app.handlers.get('set-notifications-dismissed')({}, ['one'], false);
   assert.equal(app.state.notifications[0].read, false);
-  app.handlers.get('mark-as-read')({}, 'one');
+  await app.handlers.get('mark-as-read')({}, 'one');
   assert.equal(app.state.notifications[0].read, true);
   assert.deepEqual(app.trayMessages, [['notifications-updated'], ['notifications-updated'], ['notifications-updated']]);
   assert.deepEqual(app.desktopMessages, app.trayMessages);

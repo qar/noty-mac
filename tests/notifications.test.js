@@ -122,7 +122,7 @@ function loadClient(fetchImpl) {
       : name === './plane-details' ? require('../dist/main/plane-details') : require(name),
   };
   vm.runInNewContext(fs.readFileSync(require.resolve('../dist/main/ntfy-client'), 'utf8'), context);
-  return { client: new context.module.exports(), state, timers, notices, nativeNotifications };
+  return { client: new context.module.exports(require('./helpers/notification-repository')(state)), state, timers, notices, nativeNotifications };
 }
 
 test('Plane comments expose task details, author and actual creation time separately from body', () => {
@@ -177,8 +177,8 @@ test('background Plane lookups deduplicate tasks and preserve dismissal performe
   const source = { ...channel, planeWorkspaceSlug: 'rtitek', encryptedPlaneApiKey: Buffer.from('test-plane-key').toString('base64') };
   state.channels = [source];
   const raw = JSON.stringify({ event: 'issue_comment', workspace_slug: 'rtitek', data: { issue: 'issue-1', project: 'project-1' } });
-  client.handleNotification(source, { id: 'one', message: raw });
-  client.handleNotification(source, { id: 'two', message: raw });
+  await client.handleNotification(source, { id: 'one', message: raw });
+  await client.handleNotification(source, { id: 'two', message: raw });
   await new Promise(resolve => setImmediate(resolve));
   state.notifications[0].read = true;
   state.notifications[0].completedAt = 123;
@@ -192,7 +192,7 @@ test('background Plane lookups deduplicate tasks and preserve dismissal performe
   }
   assert.equal(state.notifications[0].completedAt, 123);
   assert.equal(state.notifications[1].completedAt, null);
-  client.refreshPlaneNotifications();
+  await client.refreshPlaneNotifications();
   await client.planeDetailsQueue;
   assert.equal(calls.length, 2);
 });
@@ -202,36 +202,36 @@ test('unavailable Plane API keeps reminders and backs off retries', async () => 
   const { client, state } = loadClient(async () => { calls++; return new Response('', { status: 403 }); });
   const source = { ...channel, encryptedPlaneApiKey: Buffer.from('test-key').toString('base64') };
   state.channels = [source];
-  client.handleNotification(source, { id: 'one', message: JSON.stringify(payload) });
+  await client.handleNotification(source, { id: 'one', message: JSON.stringify(payload) });
   await client.planeDetailsQueue;
-  client.refreshPlaneNotifications();
+  await client.refreshPlaneNotifications();
   await client.planeDetailsQueue;
   assert.equal(calls, 1);
   assert.equal(state.notifications[0].read, false);
   assert.equal(state.notifications[0].title, payload.data.name);
 });
 
-test('ntfy delivery deduplicates per subscription without coalescing events for the same task', () => {
+test('ntfy delivery deduplicates per subscription without coalescing events for the same task', async () => {
   const { client, state, notices } = loadClient();
   const data = { id: 'event-1', time: 1780000000, message: JSON.stringify(payload) };
-  client.handleNotification(channel, data);
-  client.handleNotification(channel, data);
-  client.handleNotification(channel, { ...data, id: 'event-2' });
+  await client.handleNotification(channel, data);
+  await client.handleNotification(channel, data);
+  await client.handleNotification(channel, { ...data, id: 'event-2' });
   assert.equal(state.notifications.length, 2);
   assert.equal(state.notifications[0].completedAt, null);
   assert.equal(state.notifications[0].timestamp, 1780000000000);
   assert.equal(notices[0].title, 'Fix login (mobile)');
-  client.handleNotification({ ...channel, id: 'another-source' }, data);
+  await client.handleNotification({ ...channel, id: 'another-source' }, data);
   assert.equal(state.notifications.length, 3);
-  client.handleNotification({ id: 'legacy', name: 'AI' }, { id: 'old', message: 'done\ntmux: %1' });
+  await client.handleNotification({ id: 'legacy', name: 'AI' }, { id: 'old', message: 'done\ntmux: %1' });
   assert.equal(state.notifications[0].type, 'tmux-agent');
   assert.equal(state.notifications[0].metadata.tmux.target, '%1');
 });
 
-test('ntfy preserves a separate terminal source after stripping custom fields in transit', () => {
+test('ntfy preserves a separate terminal source after stripping custom fields in transit', async () => {
   const { client, state, notices } = loadClient();
   const message = 'tmux: %34\ntmux-source: {"project":"hl-trv-app"}\n📂 rtm-review-283\n\nReview completed';
-  client.handleNotification({ id: 'ai', name: 'AI' }, { id: 'review', title: 'Codex update', message });
+  await client.handleNotification({ id: 'ai', name: 'AI' }, { id: 'review', title: 'Codex update', message });
   assert.equal(state.notifications[0].metadata.tmux.sourceProject, 'hl-trv-app');
   assert.equal(state.notifications[0].metadata.project.name, 'rtm-review-283');
   assert.equal(state.notifications[0].message, message);
@@ -239,10 +239,25 @@ test('ntfy preserves a separate terminal source after stripping custom fields in
   assert.equal(notices[0].subtitle, 'rtm-review-283');
 });
 
-test('malformed terminal source markers remain content and do not override project validation', () => {
+test('native AI notifications share a neutral title while preserving the original routing data', async () => {
+  for (const title of ['Codex 更新', 'Claude Code 更新', 'Gemini update']) {
+    const { client, state, notices } = loadClient();
+    await client.handleNotification({ id: 'ai', name: 'Claude Code 更新' }, {
+      id: 'agent-event', title, message: 'tmux: %34\ntmux-source: {"project":"source"}\nWork completed',
+    });
+    assert.equal(notices[0].title, 'AI 通知');
+    assert.equal(notices[0].body, 'Work completed');
+    assert.equal(state.notifications[0].title, title);
+    assert.equal(state.notifications[0].metadata.tmux.target, '%34');
+    assert.equal(state.notifications[0].metadata.tmux.sourceProject, 'source');
+    assert.equal(state.notifications[0].read, false);
+  }
+});
+
+test('malformed terminal source markers remain content and do not override project validation', async () => {
   for (const marker of ['not json', '{"project":"/work/source"}', '{"project":".."}', '{"project":42}', 'null']) {
     const { client, state, notices } = loadClient();
-    client.handleNotification({ id: 'ai', name: 'AI' }, { id: 'review', message: `tmux: %34\ntmux-source: ${marker}\nDone` });
+    await client.handleNotification({ id: 'ai', name: 'AI' }, { id: 'review', message: `tmux: %34\ntmux-source: ${marker}\nDone` });
     assert.equal(state.notifications[0].metadata.tmux.sourceProject, undefined);
     assert.match(notices[0].body, /tmux-source:/);
   }
@@ -271,6 +286,20 @@ test('ntfy stream reconstructs split UTF-8 JSON, processes final lines and recon
   assert.equal(client.connections.size, 0);
 });
 
+test('removing a subscription during its SQLite read cannot start a late connection', async () => {
+  let release;
+  let requests = 0;
+  const { client, timers } = loadClient(async () => { requests++; throw new Error('Unexpected network request'); });
+  client.notifications.list = () => new Promise(resolve => { release = resolve; });
+  const pending = client.startSSEConnection(channel);
+  client.unsubscribeFromChannel(channel.id);
+  release([]);
+  await pending;
+  assert.equal(requests, 0);
+  assert.equal(client.connections.size, 0);
+  assert.equal(timers.length, 0);
+});
+
 test('Plane JSON attachments are read and persisted instead of the ntfy file placeholder', async () => {
   const raw = JSON.stringify({ event: 'issue_comment', action: 'created',
     data: { id: 'comment', issue: 'task', project: 'project', comment_html: '<p>Test comment</p>' },
@@ -296,21 +325,21 @@ test('comment payloads without a workspace slug retain their complete body and u
   assert.equal(JSON.parse(withWorkspace.metadata.plane.rawPayload).data.comment_html, '<p>测试评论</p><p>Raw comment content.</p>');
 });
 
-test('comment previews extract readable HTML text and preserve complete raw payloads in native notifications', () => {
+test('comment previews extract readable HTML text and preserve complete raw payloads in native notifications', async () => {
   const raw = JSON.stringify({ event: 'issue_comment', action: 'created', data: {
     comment_html: '<p>修复 <strong>App</strong> &amp; Web</p><p>详情<br><a href="https://example.com">查看任务</a></p><script>alert(1)</script><style>p{color:red}</style><img src="https://example.com/track" onerror="alert(1)">',
   } });
   const expected = '修复 App & Web 详情 查看任务';
   assert.equal(planeCommentPreview(raw), expected);
   const { client, state, notices } = loadClient();
-  client.handleNotification(channel, { id: 'comment-preview', message: raw });
+  await client.handleNotification(channel, { id: 'comment-preview', message: raw });
   assert.equal(notices[0].body, expected);
   assert.equal(state.notifications[0].metadata.plane.rawPayload, raw);
   assert.equal(state.notifications[0].read, false);
   assert.equal(state.notifications[0].completedAt, null);
 });
 
-test('Plane reply previews show the newly added comment without the quoted conversation', () => {
+test('Plane reply previews show the newly added comment without the quoted conversation', async () => {
   const quoted = '旧评论正文'.repeat(80);
   const body = '麻烦世新确认下固件行为';
   const html = `<blockquote data-reply-to="previous-comment"><p>旧作者 · Nov 16, 2026</p><blockquote><p>${quoted}</p></blockquote></blockquote><p><mention-component entity_name="user_mention"></mention-component> ${body}</p>`;
@@ -319,7 +348,7 @@ test('Plane reply previews show the newly added comment without the quoted conve
       const raw = JSON.stringify({ event: 'issue_comment', action, data: { comment_html: html, comment_stripped: stripped } });
       assert.equal(planeCommentPreview(raw), body);
       const { client, state, notices } = loadClient();
-      client.handleNotification(channel, { id: 'reply-preview', message: raw });
+      await client.handleNotification(channel, { id: 'reply-preview', message: raw });
       assert.equal(notices[0].body, body);
       assert.equal(state.notifications[0].metadata.plane.rawPayload, raw);
       assert.equal(state.notifications[0].read, false);
@@ -327,12 +356,12 @@ test('Plane reply previews show the newly added comment without the quoted conve
   }
 });
 
-test('reply-only and empty comments do not fall back to quoted text or JSON in native notifications', () => {
+test('reply-only and empty comments do not fall back to quoted text or JSON in native notifications', async () => {
   for (const html of ['<blockquote data-reply-to="previous-comment"><p>旧评论</p></blockquote><p><br></p>', '<p><br></p>']) {
     const raw = JSON.stringify({ event: 'issue_comment', action: 'created', data: { comment_html: html, comment_stripped: '旧评论' } });
     assert.equal(planeCommentPreview(raw), null);
     const { client, state, notices } = loadClient();
-    client.handleNotification(channel, { id: 'reply-only', message: raw });
+    await client.handleNotification(channel, { id: 'reply-only', message: raw });
     assert.equal(notices[0].body, '评论无正文');
     assert.equal(state.notifications[0].metadata.plane.rawPayload, raw);
   }
@@ -352,7 +381,7 @@ test('reply quotes do not consume the new comment preview length', () => {
   assert.equal(planeCommentPreview(raw), '新'.repeat(200) + '…');
 });
 
-test('comment previews truncate at 200 user-visible characters without splitting Unicode sequences', () => {
+test('comment previews truncate at 200 user-visible characters without splitting Unicode sequences', async () => {
   const prefix = '中'.repeat(198) + 'e\u0301' + '\u{1F469}\u200D\u{1F4BB}';
   for (const suffix of ['', '多余内容']) {
     const raw = JSON.stringify({ event: 'issue_comment', data: { comment_stripped: prefix + suffix, comment_html: `<p>${prefix + suffix}</p>` } });
@@ -360,7 +389,7 @@ test('comment previews truncate at 200 user-visible characters without splitting
   }
   const longUnicode = '\u{1F469}\u200D\u{1F4BB}'.repeat(201);
   const { client, notices } = loadClient();
-  client.handleNotification(channel, { id: 'unicode-preview', message: JSON.stringify({ event: 'issue_comment', data: { comment_stripped: longUnicode } }) });
+  await client.handleNotification(channel, { id: 'unicode-preview', message: JSON.stringify({ event: 'issue_comment', data: { comment_stripped: longUnicode } }) });
   assert.equal(notices[0].body, '\u{1F469}\u200D\u{1F4BB}'.repeat(200) + '…');
   for (const raw of ['invalid', 'null', '{}', JSON.stringify({ event: 'issue', data: { comment_stripped: 'Not a comment event' } }), JSON.stringify({ event: 'issue_comment', data: { comment_html: '<p><br></p>' } })]) {
     assert.equal(planeCommentPreview(raw), null);
@@ -415,11 +444,11 @@ test('cached historical attachment messages are backfilled without duplicating o
   assert.equal(notices.length, 0);
 });
 
-test('native notification callbacks stay alive until close and clicks do not acknowledge content', () => {
+test('native notification callbacks stay alive until close and clicks do not acknowledge content', async () => {
   const { client, state, nativeNotifications } = loadClient();
   let clicked;
   client.on('notification-clicked', item => { clicked = item.id; });
-  client.handleNotification(channel, { id: 'native', message: JSON.stringify(payload) });
+  await client.handleNotification(channel, { id: 'native', message: JSON.stringify(payload) });
   const saved = structuredClone(state.notifications);
   assert.equal(client.systemNotifications.size, 1);
   nativeNotifications[0].emit('click');

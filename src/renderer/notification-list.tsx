@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Archive, BellPlus, Clock3, ExternalLink, Folder, GitBranch, Inbox, PanelRightOpen, Pin, PinOff, RotateCcw, Settings, Terminal, UserRound } from 'lucide-react';
 import type { AppNotification, Channel } from '../main/notification-types';
-import { isPendingNotification, planeCommentPreview, tmuxSourceProject } from '../main/notification-core';
+import { isPendingNotification, notificationDisplayTitle, planeCommentPreview, tmuxSourceProject } from '../main/notification-core';
 import { groupNotifications, notificationGroupKey } from '../main/notification-groups';
 import './renderer-api';
 
@@ -113,7 +113,7 @@ export function NotificationList({ desktop = false }: { desktop?: boolean }) {
     const body = plane
       ? isComment ? comment ?? '评论无正文' : planeEvent?.parseError ?? item.message
       : message.text;
-    const title = plane ? item.title : item.title.replace(/\s*\([^)]*\)\s*$/, '');
+    const title = notificationDisplayTitle(item);
     const target = plane ? item.metadata?.plane?.url : item.metadata?.tmux?.target;
     const tmuxSession = item.metadata?.tmux?.session && !item.metadata.tmux.session.startsWith('%') ? item.metadata.tmux.session : '会话不可用';
     const sourceName = source?.name || '已移除的通知来源';
@@ -122,7 +122,7 @@ export function NotificationList({ desktop = false }: { desktop?: boolean }) {
     const dismissLabel = dismissed ? (grouped ? '恢复本组提醒' : '恢复提醒') : grouped ? '收起本组提醒' : '收起提醒';
     return <article key={item.id} id={`notification-${item.id}`} data-notification-id={item.id} data-keyboard-item tabIndex={-1} className={`notification-item ${dismissed ? 'read' : ''} ${item.id === selection.id ? 'is-selected' : ''}`}>
       <div className="notification-header">
-        <span className="notification-type">{plane ? 'RtiTek Plane' : 'Tmux AI agent'}{grouped ? <span className="notification-count">{group.length} 条</span> : null}</span>
+        <span className="notification-type">{plane ? 'RtiTek Plane' : 'Tmux'}{grouped ? <span className="notification-count">{group.length} 条</span> : null}</span>
         <time className="notification-time" dateTime={new Date(item.timestamp).toISOString()} title={`收到于 ${new Date(item.timestamp).toLocaleString()}`}>{formatTime(item.timestamp)}</time>
       </div>
       <div className="notification-heading">
@@ -165,7 +165,7 @@ export function NotificationList({ desktop = false }: { desktop?: boolean }) {
         <summary>{message.isJson ? '原始 JSON' : '原始内容'}</summary>
         <pre className="notification-message">{message.text}</pre>
       </details> : null}
-      {sourceName !== title ? <div className="notification-bottom">
+      {plane && sourceName !== title ? <div className="notification-bottom">
         <span className="notification-channel">{sourceName}</span>
       </div> : null}
       {plane && !target ? <div className="notification-warning">缺少任务链接</div> : null}

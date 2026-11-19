@@ -59,6 +59,11 @@ export interface IntegrationSnapshot {
     snippetInstalled: boolean;
   };
   snippet: string;
+  notify: {
+    scriptSourcePath: string;
+    installCommand: string;
+    installed: { at: string | null; isOurs: boolean };
+  };
 }
 
 export interface UpdateCheckResult {

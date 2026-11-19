@@ -46,7 +46,7 @@ require('node:fs').writeFileSync(process.env.TEST_CAPTURE, args[args.indexOf('-d
     execFileSync('bash', [path.join(__dirname, '..', 'scripts', 'ntfy-notify.example.sh')], {
       input: JSON.stringify({ title: 'Test notification', message: 'Done', ...input }),
       env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, NTFY_CHANNEL: 'test-topic', NTFY_SERVER: 'https://invalid.example',
-        TMUX_PANE: pane, TMUX: '/tmp/test-tmux/default,123,0', CODEX_THREAD_ID: codexThread,
+        NOTY_TRANSPORT: 'ntfy', TMUX_PANE: pane, TMUX: '/tmp/test-tmux/default,123,0', CODEX_THREAD_ID: codexThread,
         CODEX_HOME: path.join(root, 'codex'),
         TEST_PANES: JSON.stringify(panes), TEST_CAPTURE: capture, TEST_ANCESTORS: JSON.stringify(ancestors) },
     });

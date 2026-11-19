@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
-# Claude Code -> ntfy notification hook
-# Purpose:
-# 1) Only notify when Claude needs human intervention.
-# 2) Include Claude's message for the human.
-# 3) Attach tmux target so clicking card can jump to the right pane.
+# Publish AI reminders locally by default. Set NOTY_TRANSPORT=ntfy for remote delivery.
 
 set -euo pipefail
 
@@ -11,6 +7,8 @@ set -euo pipefail
 command -v jq >/dev/null 2>&1 || exit 0
 
 INPUT="$(cat)"
+TRANSPORT="${NOTY_TRANSPORT:-local}"
+case "$TRANSPORT" in local|ntfy) ;; *) printf 'Invalid NOTY_TRANSPORT: %s\n' "$TRANSPORT" >&2; exit 1 ;; esac
 
 # --- Trigger condition: send all Claude notifications ---
 # (No notification_type filtering; user wants all notifications jumpable.)
@@ -21,7 +19,7 @@ TOPIC="${NTFY_CHANNEL:-}"
 if [ -z "$TOPIC" ]; then
   TOPIC="$(echo "$INPUT" | jq -r '.topic // empty')"
 fi
-[ -n "$TOPIC" ] || exit 0
+if [ "$TRANSPORT" = ntfy ] && [ -z "$TOPIC" ]; then exit 0; fi
 
 SERVER="${NTFY_SERVER:-https://ntfy.sh}"
 SERVER="${SERVER%/}"
@@ -37,6 +35,8 @@ fi
 
 # --- Context line (repo/branch) ---
 GIT_INFO=""
+REPO=""
+BRANCH=""
 if [ -n "$CWD" ] && [ -d "$CWD" ] && git -C "$CWD" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   REPO="$(basename "$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || true)"
   BRANCH="$(git -C "$CWD" branch --show-current 2>/dev/null || true)"
@@ -220,8 +220,65 @@ PAYLOAD="$(jq -n \
     } else {} end)'
 )"
 
-# --- Send ---
+# --- Local delivery ---
+if [ "$TRANSPORT" = local ]; then
+  command -v sqlite3 >/dev/null 2>&1 || { printf 'sqlite3 is required\n' >&2; exit 1; }
+  SCRIPT_PATH="${BASH_SOURCE[0]}"
+  while [ -L "$SCRIPT_PATH" ]; do
+    SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd -P)"
+    SCRIPT_PATH="$(readlink "$SCRIPT_PATH")"
+    [[ "$SCRIPT_PATH" = /* ]] || SCRIPT_PATH="$SCRIPT_DIR/$SCRIPT_PATH"
+  done
+  SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd -P)"
+  SCHEMA="$(< "$SCRIPT_DIR/notification-schema.sql")"
+  DATABASE="${NOTY_DATABASE_PATH:-}"
+  if [ -z "$DATABASE" ] && [ -f "$SCRIPT_DIR/database-path" ]; then IFS= read -r DATABASE < "$SCRIPT_DIR/database-path"; fi
+  DATABASE="${DATABASE:-$HOME/Library/Application Support/noty-mac/notifications.sqlite3}"
+  umask 077
+  mkdir -p "$(dirname "$DATABASE")"
+  MESSAGE_ID="$(printf '%s' "$INPUT" | jq -r '.id // empty')"
+  [ -n "$MESSAGE_ID" ] || MESSAGE_ID="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+  RECORD="$(printf '%s' "$PAYLOAD" | jq -c \
+    --arg id "$MESSAGE_ID" --arg repo "$REPO" --arg branch "$BRANCH" --arg thread "${CODEX_THREAD_ID:-}" '
+    {id: $id, channelId: "local-tmux", type: "tmux-agent", title, message, timestamp: (now * 1000 | floor), read: false,
+      metadata: ((.metadata // {})
+        + (if $repo != "" then {project: {name: $repo, branch: $branch}} else {} end)
+        + (if $thread != "" then {agent: {threadId: $thread}} else {} end))}
+    | . + {groupKey: (if .metadata.tmux.target then
+        ["tmux", .channelId, (.metadata.tmux.sourceProject // .metadata.project.name // ""), .metadata.tmux.target]
+        else ["notification", .id] end | tojson)}')"
+  # Hex transport preserves arbitrary JSON bytes without interpolating SQL text.
+  RECORD_HEX="$(printf '%s' "$RECORD" | od -An -v -tx1 | tr -d ' \n')"
+  write_local_record() {
+    sqlite3 -batch -bail "$DATABASE" <<SQL
+$SCHEMA
+BEGIN IMMEDIATE;
+INSERT INTO notifications(id, source, channel_id, kind, group_key, timestamp, is_read, presented, payload)
+SELECT json_extract(value, '$.id'), 'local', 'local-tmux', 'tmux-agent', json_extract(value, '$.groupKey'),
+  json_extract(value, '$.timestamp'), 0, 0, json_remove(value, '$.groupKey')
+FROM (SELECT CAST(X'$RECORD_HEX' AS TEXT) AS value)
+WHERE NOT EXISTS (SELECT 1 FROM notification_deliveries WHERE key = json_array('id', json_extract(value, '$.id')))
+ON CONFLICT(id) DO NOTHING;
+INSERT OR IGNORE INTO notification_deliveries(key, notification_id)
+SELECT json_array('id', json_extract(value, '$.id')), json_extract(value, '$.id')
+FROM (SELECT CAST(X'$RECORD_HEX' AS TEXT) AS value);
+COMMIT;
+SQL
+  }
+  for ATTEMPT in 1 2 3 4; do
+    if DELIVERY_ERROR="$(write_local_record 2>&1)"; then exit 0; fi
+    case "$DELIVERY_ERROR" in
+      *"database is locked"*|*"database is busy"*) sleep "0.$ATTEMPT" ;;
+      *) break ;;
+    esac
+  done
+  printf 'Noty local delivery failed: %s\n' "$DELIVERY_ERROR" >&2
+  exit 1
+fi
+
+# --- Remote delivery ---
 curl -fsS \
+  --connect-timeout 5 --max-time 15 \
   -H "Content-Type: application/json" \
   -d "$PAYLOAD" \
   "$SERVER" >/dev/null

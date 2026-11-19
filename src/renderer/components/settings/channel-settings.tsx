@@ -7,7 +7,7 @@ export function ChannelSettings() {
   const [channels, setChannels] = useState<Channel[] | null>(null);
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
-  const [type, setType] = useState<NotificationType>('tmux-agent');
+  const [type, setType] = useState<NotificationType>('plane');
   const [planeBaseUrl, setPlaneBaseUrl] = useState('');
   const [planeWorkspaceSlug, setPlaneWorkspaceSlug] = useState('');
   const [accessToken, setAccessToken] = useState('');
@@ -99,9 +99,9 @@ export function ChannelSettings() {
                 {channel.type === 'plane' ? <ClipboardList aria-hidden="true" /> : <Terminal aria-hidden="true" />}
                 <div className="channel-settings-copy">
                   <div className="channel-settings-name">{channel.name}</div>
-                  <span className="channel-settings-type">{channel.type === 'plane' ? 'RtiTek Plane 通知' : 'Tmux 内的 AI agent 通知'}</span>
+                  <span className="channel-settings-type">{channel.transport === 'local' ? '本机 Tmux 通知' : channel.type === 'plane' ? 'RtiTek Plane 通知' : 'Tmux 通知 · ntfy'}</span>
                   <code className="channel-settings-url" title={channel.url}>
-                    {channel.url}
+                    {channel.transport === 'local' ? '已启用' : channel.url}
                   </code>
                   {channel.planeBaseUrl ? <span className="channel-settings-url">{channel.planeBaseUrl}</span> : null}
                   {editingKey === channel.id ? <form className="settings-form" onSubmit={event => { event.preventDefault(); void savePlaneKey(channel.id, replacementKey); }}>
@@ -117,7 +117,7 @@ export function ChannelSettings() {
                   </form> : null}
                 </div>
                 {channel.type === 'plane' ? <button type="button" className="settings-icon-button" title={`Plane API 密钥${channel.hasPlaneApiKey ? '（已配置）' : ''}`} aria-label={`配置 Plane API 密钥：${channel.name}`} disabled={submitting} onClick={() => { setEditingKey(channel.id); setReplacementKey(''); }}><KeyRound aria-hidden="true" /></button> : null}
-                <button
+                {channel.transport !== 'local' ? <button
                   type="button"
                   className="settings-icon-button is-danger"
                   title={`删除频道 ${channel.name}`}
@@ -126,7 +126,7 @@ export function ChannelSettings() {
                   onClick={() => void removeChannel(channel.id)}
                 >
                   <Trash2 aria-hidden="true" />
-                </button>
+                </button> : null}
               </div>
             ))
           ) : channels ? (
@@ -145,7 +145,7 @@ export function ChannelSettings() {
           <label className="settings-form-field notification-type-field">
             <span>通知类型</span>
             <select aria-label="通知类型" value={type} disabled={submitting} onChange={(event) => setType(event.target.value as NotificationType)}>
-              <option value="tmux-agent">Tmux 内的 AI agent 通知</option>
+              <option value="tmux-agent">Tmux 通知（ntfy）</option>
               <option value="plane">RtiTek Plane 通知</option>
             </select>
           </label>

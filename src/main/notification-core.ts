@@ -1,6 +1,10 @@
 import { compile } from 'html-to-text';
 import type { AppNotification, Channel, ChannelOptions, PlaneEvent } from './notification-types';
 
+export function notificationDisplayTitle(item: Pick<AppNotification, 'type' | 'title'>): string {
+  return item.type === 'plane' ? item.title : 'AI 通知';
+}
+
 // ntfy preserves the message body but drops custom top-level metadata.
 export function tmuxSourceProject(message: unknown): string | null {
   if (typeof message !== 'string') return null;
