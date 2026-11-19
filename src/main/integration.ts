@@ -57,6 +57,11 @@ export interface IntegrationSnapshot {
   claudeMd: ClaudeMdInfo;
   /** Full text of the recommended CLAUDE.md snippet. */
   snippet: string;
+  notify: {
+    scriptSourcePath: string;
+    installCommand: string;
+    installed: InstalledInfo;
+  };
 }
 
 // -----------------------------------------------------------------------
@@ -77,10 +82,10 @@ function resolveScriptSource(): string {
 // -----------------------------------------------------------------------
 // Installed detection
 // -----------------------------------------------------------------------
-function detectInstalled(scriptSourcePath: string): InstalledInfo {
+function detectInstalled(scriptSourcePath: string, locations = CANDIDATE_LOCATIONS): InstalledInfo {
   const sourceReal = safeRealpath(scriptSourcePath);
 
-  for (const loc of CANDIDATE_LOCATIONS) {
+  for (const loc of locations) {
     let stat: fsSync.Stats;
     try {
       stat = fsSync.lstatSync(loc);
@@ -177,6 +182,7 @@ function shellQuote(s: string): string {
 export async function snapshot(): Promise<IntegrationSnapshot> {
   const scriptSourcePath = resolveScriptSource();
   const installed = detectInstalled(scriptSourcePath);
+  const notifySourcePath = path.join(app.getPath('userData'), 'notification-tools/current/noty-notify');
   const [claudeMd, snippet] = await Promise.all([
     detectClaudeMd(),
     readSnippet(),
@@ -187,6 +193,11 @@ export async function snapshot(): Promise<IntegrationSnapshot> {
     installed,
     claudeMd,
     snippet,
+    notify: {
+      scriptSourcePath: notifySourcePath,
+      installCommand: `mkdir -p ~/.local/bin && ln -sf ${shellQuote(notifySourcePath)} ~/.local/bin/noty-notify`,
+      installed: detectInstalled(notifySourcePath, CANDIDATE_LOCATIONS.map(location => path.join(path.dirname(location), 'noty-notify'))),
+    },
   };
 }
 
