@@ -33,40 +33,6 @@ const schema = {
       required: ['id', 'name', 'url']
     }
   },
-  notifications: {
-    type: 'array',
-    default: [],
-    items: {
-      type: 'object',
-      properties: {
-        id: { type: 'string' },
-        ntfyId: { type: ['string', 'null'] },
-        type: { type: 'string', enum: ['tmux-agent', 'plane'] },
-        completedAt: { type: ['number', 'null'] },
-        channelId: { type: 'string' },
-        title: { type: 'string' },
-        message: { type: 'string' },
-        timestamp: { type: 'number' },
-        read: { type: 'boolean' },
-        metadata: {
-          type: 'object',
-          properties: {
-            tmux: {
-              type: 'object',
-              properties: {
-                target: { type: 'string' },
-                session: { type: 'string' },
-                window: { type: 'string' },
-                pane: { type: 'string' }
-              }
-            },
-            chainTestApp: { type: 'string' }
-          }
-        }
-      },
-      required: ['id', 'channelId', 'message', 'timestamp', 'read']
-    }
-  },
   settings: {
     type: 'object',
     default: {
