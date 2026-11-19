@@ -26,14 +26,17 @@ export async function recoverNotificationTarget(
   // Prefer the original agent; a single remaining shell is still a destination.
   const groups = [panes.filter(pane => detected.get(pane.id)?.toLowerCase() === agent),
     panes.filter(pane => !detected.has(pane.id))];
+  const switchedBranch: { target: string; checkout: NotificationCheckout }[] = [];
   for (const group of groups) {
     const matching: { target: string; checkout: NotificationCheckout }[] = [];
     let unverified = false;
     for (const { id: target } of group) {
       try {
         const checkout = await readCheckout(target);
-        if (checkout && path.basename(checkout.root) === projectName && (sourceProject || checkout.branch === project?.branch)) {
-          matching.push({ target, checkout });
+        const sourceAgent = detected.get(target)?.toLowerCase() === agent;
+        if (checkout && path.basename(checkout.root) === projectName) {
+          if (sourceProject || checkout.branch === project?.branch) matching.push({ target, checkout });
+          else if (sourceAgent) switchedBranch.push({ target, checkout });
         }
       } catch {
         unverified = true;
@@ -42,6 +45,12 @@ export async function recoverNotificationTarget(
     if (matching.length > 1) return { reason: 'source_ambiguous' };
     if (unverified) return { reason: 'source_project_unverified' };
     if (matching[0]) return matching[0];
+  }
+  // A checkout can change branches while its source agent stays in the pane.
+  // Only recover across branches when no exact destination exists and the agent is unique.
+  if (switchedBranch.length) {
+    if (switchedBranch.length > 1) return { reason: 'source_ambiguous' };
+    return switchedBranch[0];
   }
   return { reason: 'source_unavailable' };
 }
