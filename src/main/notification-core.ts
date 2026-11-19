@@ -21,6 +21,7 @@ const commentToText = compile({
   selectors: [
     { selector: 'a', options: { ignoreHref: true } },
     { selector: 'img', format: 'skip' },
+    { selector: 'blockquote[data-reply-to]', format: 'skip' },
   ],
 });
 const commentCharacters = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
@@ -30,7 +31,9 @@ export function planeCommentPreview(rawPayload: string): string | null {
   try { payload = record(JSON.parse(rawPayload)); } catch { return null; }
   if (payload.event !== 'issue_comment') return null;
   const data = record(payload.data);
-  const content = (text(data.comment_stripped) || commentToText(text(data.comment_html)))
+  // Plain text can include the quoted conversation; HTML identifies reply quotes.
+  const html = text(data.comment_html);
+  const content = (html ? commentToText(html) : text(data.comment_stripped))
     .replace(/\s+/gu, ' ').trim();
   if (!content) return null;
   let preview = '';

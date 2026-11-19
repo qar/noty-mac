@@ -310,10 +310,52 @@ test('comment previews extract readable HTML text and preserve complete raw payl
   assert.equal(state.notifications[0].completedAt, null);
 });
 
+test('Plane reply previews show the newly added comment without the quoted conversation', () => {
+  const quoted = '旧评论正文'.repeat(80);
+  const body = '麻烦世新确认下固件行为';
+  const html = `<blockquote data-reply-to="previous-comment"><p>旧作者 · Nov 16, 2026</p><blockquote><p>${quoted}</p></blockquote></blockquote><p><mention-component entity_name="user_mention"></mention-component> ${body}</p>`;
+  for (const action of ['created', 'updated']) {
+    for (const stripped of [undefined, `旧作者 ${quoted} ${body}`]) {
+      const raw = JSON.stringify({ event: 'issue_comment', action, data: { comment_html: html, comment_stripped: stripped } });
+      assert.equal(planeCommentPreview(raw), body);
+      const { client, state, notices } = loadClient();
+      client.handleNotification(channel, { id: 'reply-preview', message: raw });
+      assert.equal(notices[0].body, body);
+      assert.equal(state.notifications[0].metadata.plane.rawPayload, raw);
+      assert.equal(state.notifications[0].read, false);
+    }
+  }
+});
+
+test('reply-only and empty comments do not fall back to quoted text or JSON in native notifications', () => {
+  for (const html of ['<blockquote data-reply-to="previous-comment"><p>旧评论</p></blockquote><p><br></p>', '<p><br></p>']) {
+    const raw = JSON.stringify({ event: 'issue_comment', action: 'created', data: { comment_html: html, comment_stripped: '旧评论' } });
+    assert.equal(planeCommentPreview(raw), null);
+    const { client, state, notices } = loadClient();
+    client.handleNotification(channel, { id: 'reply-only', message: raw });
+    assert.equal(notices[0].body, '评论无正文');
+    assert.equal(state.notifications[0].metadata.plane.rawPayload, raw);
+  }
+});
+
+test('authored blockquotes and plain-text-only comments remain visible', () => {
+  const raw = JSON.stringify({ event: 'issue_comment', data: { comment_html: '<blockquote><p>正文引用</p></blockquote><p>新增解释</p>' } });
+  assert.equal(planeCommentPreview(raw), '> 正文引用 新增解释');
+  assert.equal(planeCommentPreview(JSON.stringify({ event: 'issue_comment', data: { comment_stripped: '只有纯文本的评论' } })), '只有纯文本的评论');
+});
+
+test('reply quotes do not consume the new comment preview length', () => {
+  const body = '新'.repeat(201);
+  const raw = JSON.stringify({ event: 'issue_comment', action: 'created', data: {
+    comment_html: `<blockquote data-reply-to="previous-comment"><p>${'旧'.repeat(1000)}</p></blockquote><p>${body}</p>`,
+  } });
+  assert.equal(planeCommentPreview(raw), '新'.repeat(200) + '…');
+});
+
 test('comment previews truncate at 200 user-visible characters without splitting Unicode sequences', () => {
   const prefix = '中'.repeat(198) + 'e\u0301' + '\u{1F469}\u200D\u{1F4BB}';
   for (const suffix of ['', '多余内容']) {
-    const raw = JSON.stringify({ event: 'issue_comment', data: { comment_stripped: prefix + suffix, comment_html: '<p>Fallback</p>' } });
+    const raw = JSON.stringify({ event: 'issue_comment', data: { comment_stripped: prefix + suffix, comment_html: `<p>${prefix + suffix}</p>` } });
     assert.equal(planeCommentPreview(raw), prefix + (suffix ? '…' : ''));
   }
   const longUnicode = '\u{1F469}\u200D\u{1F4BB}'.repeat(201);
