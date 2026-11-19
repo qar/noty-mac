@@ -191,6 +191,11 @@ async function reminderPage(t, entry, width) {
     window.calls = [];
     window.failJump = false;
     window.pushReminder = () => { window.items.unshift(make('new', 0)); handlers.updated?.(); };
+    window.updateComment = html => {
+      window.items[0].message = JSON.stringify({ event: 'issue_comment', action: 'created', data: { comment_html: html } });
+      window.items[0].metadata.plane.rawPayload = window.items[0].message;
+      handlers.updated?.();
+    };
     window.api = {
       getNotifications: async () => window.items,
       getChannels: async () => [{ id: 'plane', name: 'RtiTek Plane', type: 'plane' }],
@@ -220,6 +225,26 @@ async function reminderPage(t, entry, width) {
 }
 
 for (const [entry, width] of [['main', 440], ['index', 380]]) {
+  test(`${entry}: Plane reply shows only the new comment and keeps full raw JSON collapsed`, async t => {
+    const page = await reminderPage(t, entry, width);
+    const quote = '<blockquote data-reply-to="earlier-comment"><p>旧评论作者</p><p>被引用的旧评论内容</p></blockquote>';
+    await page.evaluate(html => window.updateComment(html), quote + '<p>麻烦世新确认下固件行为</p>');
+    const article = page.locator('#notification-1');
+    const body = article.locator(':scope > .notification-message');
+    await page.waitForFunction(() => document.querySelector('#notification-1 > .notification-message')?.textContent === '麻烦世新确认下固件行为');
+    assert.equal(await body.textContent(), '麻烦世新确认下固件行为');
+    assert.equal(await article.locator('.notification-raw').evaluate(details => details.open), false);
+    assert.equal(await article.locator('.notification-comment-author').textContent(), '测试用户');
+    await page.screenshot({ path: `/tmp/noty-plane-reply-${entry}.png`, caret: 'initial' });
+    await article.locator('.notification-raw > summary').click();
+    assert.match(await article.locator('.notification-raw pre').textContent(), /被引用的旧评论内容/);
+    await article.locator('.notification-raw > summary').click();
+    await page.evaluate(html => window.updateComment(html), quote + '<p><br></p>');
+    await page.waitForFunction(() => document.querySelector('#notification-1 > .notification-message')?.textContent === '评论无正文');
+    assert.equal(await body.textContent(), '评论无正文');
+    assert.deepEqual(await page.evaluate(() => window.calls), []);
+  });
+
   test(`${entry}: reminder navigation preserves groups, follows live updates and opens through the existing API`, async t => {
     const page = await reminderPage(t, entry, width);
     await page.keyboard.press('j');

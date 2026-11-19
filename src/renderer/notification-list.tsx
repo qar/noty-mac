@@ -111,7 +111,7 @@ export function NotificationList({ desktop = false }: { desktop?: boolean }) {
     const planeEvent = item.metadata?.plane;
     const isComment = plane && planeEvent?.event === 'issue_comment';
     const body = plane
-      ? comment ?? item.metadata?.plane?.parseError ?? item.message
+      ? isComment ? comment ?? '评论无正文' : planeEvent?.parseError ?? item.message
       : message.text;
     const title = plane ? item.title : item.title.replace(/\s*\([^)]*\)\s*$/, '');
     const target = plane ? item.metadata?.plane?.url : item.metadata?.tmux?.target;
