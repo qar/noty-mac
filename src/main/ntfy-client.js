@@ -2,7 +2,7 @@ const { EventEmitter } = require('events');
 const { Notification, safeStorage } = require('electron');
 const store = require('./store');
 const crypto = require('crypto');
-const { normalizePlaneNotification, planeCommentPreview, hydratePlaneNotifications, planeNotificationTitle, tmuxSourceProject } = require('./notification-core');
+const { normalizePlaneNotification, planeCommentPreview, hydratePlaneNotifications, planeNotificationTitle, notificationDisplayTitle, tmuxSourceProject } = require('./notification-core');
 const { readPlaneAttachment } = require('./plane-attachment');
 const { PlaneDetailsClient, migratePlaneCredentials } = require('./plane-details');
 
@@ -398,7 +398,7 @@ class NtfyClient extends EventEmitter {
 
     // 显示系统通知
     const settings = store.get('settings');
-    const cleanTitle = plane ? notification.title : notification.title.replace(/\s*\([^)]*\)\s*$/, '');
+    const cleanTitle = notificationDisplayTitle(notification);
     const project = metadata?.project;
     const projectLabel = project
       ? (project.branch ? `${project.name} (${project.branch})` : project.name)

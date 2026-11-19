@@ -239,6 +239,21 @@ test('ntfy preserves a separate terminal source after stripping custom fields in
   assert.equal(notices[0].subtitle, 'rtm-review-283');
 });
 
+test('native AI notifications share a neutral title while preserving the original routing data', async () => {
+  for (const title of ['Codex 更新', 'Claude Code 更新', 'Gemini update']) {
+    const { client, state, notices } = loadClient();
+    await client.handleNotification({ id: 'ai', name: 'Claude Code 更新' }, {
+      id: 'agent-event', title, message: 'tmux: %34\ntmux-source: {"project":"source"}\nWork completed',
+    });
+    assert.equal(notices[0].title, 'AI 通知');
+    assert.equal(notices[0].body, 'Work completed');
+    assert.equal(state.notifications[0].title, title);
+    assert.equal(state.notifications[0].metadata.tmux.target, '%34');
+    assert.equal(state.notifications[0].metadata.tmux.sourceProject, 'source');
+    assert.equal(state.notifications[0].read, false);
+  }
+});
+
 test('malformed terminal source markers remain content and do not override project validation', async () => {
   for (const marker of ['not json', '{"project":"/work/source"}', '{"project":".."}', '{"project":42}', 'null']) {
     const { client, state, notices } = loadClient();
