@@ -90,8 +90,8 @@ export function NotificationList({ desktop = false }: { desktop?: boolean }) {
         if (result.reason === 'source_project_mismatch') throw new Error('这条提醒记录的 pane 属于其他项目，无法确定原始来源');
         if (result.reason === 'source_project_unverified') throw new Error('无法确认这条提醒的来源项目，请检查目标 pane');
         if (result.reason === 'no_target') throw new Error('这条提醒未记录 tmux 位置，现有信息不足以恢复跳转目标');
-        if (result.reason === 'source_ambiguous') throw new Error('同项目、同分支有多个 AI 窗格，无法确定这条提醒的来源');
-        if (result.reason === 'source_unavailable') throw new Error('找不到与这条提醒匹配的 AI 窗格，原会话可能已关闭');
+        if (result.reason === 'source_ambiguous') throw new Error('有多个可能的来源窗格，无法确定这条提醒应打开哪一个');
+        if (result.reason === 'source_unavailable') throw new Error('未找到可确认的来源窗格，请确认原 pane 仍在对应项目中');
         throw new Error(item.type === 'plane' ? result.reason : '无法跳转到 tmux，请确认会话仍在运行');
       }
     });

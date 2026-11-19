@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 function navigation({ project = 'noty-mac', root = '/work/noty-mac', gitFails = false, tmuxUnavailable = false,
-  target = '%31', branch, duplicateAgent = false, branchChanges = false, staleTarget = false, browserFails = false, onOpen } = {}) {
+  target = '%31', branch, currentBranch = branch, duplicateAgent = false, unrelatedAgentOutsideGit = false, branchChanges = false, staleTarget = false, browserFails = false, onOpen } = {}) {
   const state = { notifications: [{ id: 'one', channelId: 'ai', title: 'Codex update', read: false, message: 'Done',
     metadata: { ...(target ? { tmux: { target } } : {}), ...(project ? { project: { name: project, branch } } : {}) } }] };
   const commands = [];
@@ -22,13 +22,14 @@ function navigation({ project = 'noty-mac', root = '/work/noty-mac', gitFails = 
       };
       if (name === 'child_process') return { execFile(file, args, options, callback) {
         commands.push([file, ...args]);
-        if (file === '/bin/ps') return callback(null, `100 1 /bin/zsh\n101 100 codex\n200 1 /bin/zsh\n${duplicateAgent ? '201 200 codex' : ''}`);
+        if (file === '/bin/ps') return callback(null, `100 1 /bin/zsh\n101 100 codex\n200 1 /bin/zsh\n${duplicateAgent || unrelatedAgentOutsideGit ? '201 200 codex' : ''}`);
         if (args[0] === 'list-panes') return callback(tmuxUnavailable ? new Error('No tmux server') : null,
           args.at(-1).includes('#{pane_pid}') ? '%89\t100\thl-test-reports\tmain\t0\n%90\t200\thl-test-reports\tmain\t1\n' : '%31\thl-sensor\n%48\tnoty-mac\n');
-        if (file.endsWith('git')) return callback(gitFails ? new Error('Not a repository') : null,
-          `${args.includes('branch') ? (branchChanges && branchReads++ > 0 ? 'changed' : branch) : args[1] === '/work/reused' ? '/work/reused' : root}\n`);
+        if (file.endsWith('git')) return callback(gitFails || args[1] === '/work/no-repository' ? new Error('Not a repository') : null,
+          `${args.includes('branch') ? (branchChanges && branchReads++ > 0 ? 'changed' : currentBranch) : args[1] === '/work/reused' ? '/work/reused' : root}\n`);
         if (args[0] === 'display-message') {
           if (staleTarget === 'missing' && args.includes(target)) return callback(new Error('Pane does not exist'));
+          if (unrelatedAgentOutsideGit && args.includes('%90') && args.at(-1) === '#{pane_current_path}') return callback(null, '/work/no-repository\n');
           const value = args.at(-1) === '#{pane_current_path}' ? (staleTarget && args.includes(target) ? '/work/reused' : `${root}/src`) : args.at(-1) === '#S' ? 'session' : 'session:1';
           return callback(null, `${value}\n`);
         }
@@ -100,6 +101,27 @@ test('target recovery never guesses between multiple agents in the same checkout
   assert.equal((await app.jump()).reason, 'source_ambiguous');
   assert.equal(app.commands.some(command => command.includes('select-pane') || command[0] === '/usr/bin/open'), false);
   assert.equal(app.state.notifications[0].read, false);
+});
+
+test('a targetless reminder follows the unique source agent after a branch switch', async () => {
+  for (const unrelatedAgentOutsideGit of [false, true]) {
+    const app = navigation({ project: 'closureapp-ios', root: '/work/closureapp-ios', branch: 'release/0.0.1', currentBranch: 'fix/p0-untagged-albums', target: null, unrelatedAgentOutsideGit });
+    const result = await app.jump();
+    assert.equal(result.success, true, JSON.stringify(result));
+    assert.ok(app.commands.some(command => command.includes('select-pane') && command.includes('%89')));
+    assert.equal(app.state.notifications[0].read, true);
+  }
+});
+
+test('cross-branch recovery keeps reminders when agent selection is ambiguous or the checkout changes', async () => {
+  for (const options of [{ duplicateAgent: true }, { branchChanges: true }]) {
+    const app = navigation({ project: 'closureapp-ios', root: '/work/closureapp-ios', branch: 'release/0.0.1', currentBranch: 'fix/p0-untagged-albums', target: null, ...options });
+    const result = await app.jump();
+    assert.equal(result.success, false);
+    assert.equal(result.reason, options.duplicateAgent ? 'source_ambiguous' : 'source_project_unverified');
+    assert.equal(app.state.notifications[0].read, false);
+    assert.equal(app.commands.some(command => command.includes('select-pane') || command[0] === '/usr/bin/open'), false);
+  }
 });
 
 test('a pane ID reused after tmux restart recovers the unique verified source', async () => {
