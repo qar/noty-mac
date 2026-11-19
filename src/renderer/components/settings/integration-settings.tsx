@@ -9,7 +9,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { IntegrationSnapshot } from '../../renderer-api';
 
-type CopyTarget = 'install' | 'snippet';
+type CopyTarget = 'install' | 'snippet' | 'notify';
 
 export function IntegrationSettings() {
   const [snapshot, setSnapshot] = useState<IntegrationSnapshot | null>(null);
@@ -85,8 +85,17 @@ export function IntegrationSettings() {
 
       {snapshot ? (
         <div className="settings-integration-steps">
-          <div className="settings-integration-step">
+          {snapshot.notify ? <div className="settings-integration-step">
             <div className="settings-step-index">1</div>
+            <div className="settings-step-content">
+              <h3>本机通知命令</h3>
+              <CommandRow text={snapshot.notify.installCommand} copied={copied === 'notify'}
+                onCopy={() => void copyText('notify', snapshot.notify.installCommand)} />
+              <InstalledStatus installed={snapshot.notify.installed} name="noty-notify" />
+            </div>
+          </div> : null}
+          <div className="settings-integration-step">
+            <div className="settings-step-index">2</div>
             <div className="settings-step-content">
               <h3>链接 noty-status</h3>
               <p>执行命令，将应用内置脚本链接到 ~/.local/bin/。</p>
@@ -95,12 +104,12 @@ export function IntegrationSettings() {
                 copied={copied === 'install'}
                 onCopy={() => void copyText('install', snapshot.installCommand)}
               />
-              <InstalledStatus snapshot={snapshot} />
+              <InstalledStatus installed={snapshot.installed} name="noty-status" />
             </div>
           </div>
 
           <div className="settings-integration-step">
-            <div className="settings-step-index">2</div>
+            <div className="settings-step-index">3</div>
             <div className="settings-step-content">
               <h3>更新 Claude Code 配置</h3>
               <p>将片段追加到 ~/.claude/CLAUDE.md。</p>
@@ -165,19 +174,19 @@ function CommandRow({
   );
 }
 
-function InstalledStatus({ snapshot }: { snapshot: IntegrationSnapshot }) {
-  const { at, isOurs } = snapshot.installed;
+function InstalledStatus({ installed, name }: { installed: IntegrationSnapshot['installed']; name: string }) {
+  const { at, isOurs } = installed;
   if (at && isOurs) {
     return <StatusLine tone="success">已安装 · <code>{at}</code></StatusLine>;
   }
   if (at) {
     return (
       <StatusLine tone="warning">
-        检测到其他 noty-status · <code>{at}</code>
+        检测到其他 {name} · <code>{at}</code>
       </StatusLine>
     );
   }
-  return <StatusLine tone="muted">未检测到 noty-status</StatusLine>;
+  return <StatusLine tone="muted">未检测到 {name}</StatusLine>;
 }
 
 function ClaudeStatus({ snapshot }: { snapshot: IntegrationSnapshot }) {

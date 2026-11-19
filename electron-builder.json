@@ -4,11 +4,14 @@
   "directories": {
     "output": "release"
   },
+  "asar": { "smartUnpack": false },
   "files": [
     "dist/**/*",
     "src/renderer/**/*",
     "assets/**/*",
-    "package.json"
+    "package.json",
+    "scripts/ntfy-notify.example.sh",
+    "scripts/notification-schema.sql"
   ],
   "extraResources": [
     {
