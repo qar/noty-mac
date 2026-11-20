@@ -12,6 +12,7 @@ export interface Channel extends ChannelOptions {
   id: string;
   name: string;
   url: string;
+  transport?: 'local' | 'ntfy';
   encryptedAccessToken?: string;
   hasAccessToken?: boolean;
   encryptedPlaneApiKey?: string;

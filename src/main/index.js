@@ -1,11 +1,14 @@
-const { app, Tray, Menu, ipcMain, nativeImage, Notification, shell, safeStorage } = require('electron');
+const { app, Tray, Menu, ipcMain, nativeImage, Notification, shell, safeStorage, dialog } = require('electron');
 const { execFile } = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
 const store = require('./store');
 const NtfyClient = require('./ntfy-client');
-const { channelFromInput, safeWebUrl, isPendingNotification, clearReadNotifications, setNotificationCompleted, setNotificationsDismissed } = require('./notification-core');
-const { groupNotifications, notificationGroupKey, notificationTmuxTarget: resolveNotificationTmuxTarget } = require('./notification-groups');
+const { NotificationDatabase, migrateLegacyStore, LOCAL_CHANNEL } = require('./notification-database');
+const LocalNotifications = require('./local-notifications');
+const { prepareLocalNotificationTools } = require('./local-notification-tools');
+const { channelFromInput, safeWebUrl, isPendingNotification } = require('./notification-core');
+const { notificationGroupKey, notificationTmuxTarget: resolveNotificationTmuxTarget } = require('./notification-groups');
 const Updater = require('./updater');
 const { toggleWindow, showNotification, getSelectedNotificationId, getWindow } = require('./window');
 const { openMainWindow, hideMainWindow, getMainWindow, destroyMainWindow, getMainWindowView, setMainWindowView, getReminderPinned, setReminderPinned } = require('./main-window');
@@ -95,16 +98,16 @@ async function readNotificationCheckout(target) {
 }
 
 function publicChannels() {
-  return store.get('channels').map(({ encryptedAccessToken, encryptedPlaneApiKey, ...channel }) => ({
+  return [LOCAL_CHANNEL, ...store.get('channels').map(({ encryptedAccessToken, encryptedPlaneApiKey, ...channel }) => ({
     ...channel,
     type: channel.type || 'tmux-agent',
     hasAccessToken: Boolean(encryptedAccessToken),
     hasPlaneApiKey: Boolean(encryptedPlaneApiKey),
-  }));
+  }))];
 }
 
 function notificationsChanged() {
-  updateTrayIcon();
+  void updateTrayIcon().catch(error => console.error('[notifications]', error.message));
   sendToNotificationWindows('notifications-updated');
 }
 
@@ -114,11 +117,10 @@ function sendToNotificationWindows(event, ...args) {
   }
 }
 
-function dismissNotifications(ids, dismissed) {
-  const notifications = setNotificationsDismissed(store.get('notifications'), ids, dismissed);
-  store.set('notifications', notifications);
+async function dismissNotifications(ids, dismissed) {
+  await notificationDatabase.dismiss(ids, dismissed);
   notificationsChanged();
-  return notifications;
+  return notificationDatabase.list();
 }
 
 function execTmux(args) {
@@ -395,7 +397,24 @@ async function jumpToTmuxSession(sessionName) {
 
 let tray = null;
 let ntfyClient = null;
+let notificationDatabase = null;
+let localNotifications = null;
 let updater = null;
+let quitting = false;
+let incomingRefreshTimer = null;
+
+app.on('before-quit', event => {
+  if (quitting || !notificationDatabase) return;
+  event.preventDefault();
+  quitting = true;
+  clearTimeout(incomingRefreshTimer);
+  ntfyClient?.unsubscribeAll();
+  void (async () => {
+    await localNotifications?.stop();
+    await ntfyClient?.planeDetailsQueue;
+    await notificationDatabase.close();
+  })().catch(error => console.error('[notifications] shutdown:', error.message)).finally(() => app.quit());
+});
 
 // 防止应用退出
 app.on('window-all-closed', (e) => {
@@ -411,6 +430,11 @@ app.on('activate', () => {
 
 app.whenReady().then(async () => {
   setDockIcon();
+  const userData = app.getPath('userData');
+  const databasePath = process.env.NOTY_DATABASE_PATH || path.join(userData, 'notifications.sqlite3');
+  notificationDatabase = await NotificationDatabase.open(databasePath);
+  await migrateLegacyStore(notificationDatabase, store, userData);
+  await prepareLocalNotificationTools(userData, app.getAppPath(), databasePath);
 
   // Prime the tmux availability cache before wiring the tray so the very
   // first right-click already has an accurate `enabled` state.
@@ -438,27 +462,36 @@ app.whenReady().then(async () => {
   } else if (process.argv.includes('--show-main-window')) {
     openMainWindow();
   }
-  updateTrayIcon();
+  await updateTrayIcon();
 
   updater = new Updater();
   updater.cleanupStagingDir();
 
   // 初始化 ntfy 客户端
-  ntfyClient = new NtfyClient();
+  ntfyClient = new NtfyClient(notificationDatabase);
 
   // 监听新通知事件
   ntfyClient.on('notification', (notification) => {
-    updateTrayIcon();
-
-    // 通知渲染进程
-    sendToNotificationWindows('new-notification', notification);
+    if (quitting) return;
+    if (incomingRefreshTimer) return;
+    incomingRefreshTimer = setTimeout(() => {
+      incomingRefreshTimer = null;
+      void updateTrayIcon().catch(error => console.error('[notifications]', error.message));
+      sendToNotificationWindows('new-notification', notification);
+    }, 50);
   });
 
   ntfyClient.on('notification-clicked', (notification) => showNotification(tray, notification.id));
   ntfyClient.on('notification-updated', notificationsChanged);
 
   // 订阅所有频道
-  ntfyClient.subscribeToAllChannels();
+  localNotifications = new LocalNotifications(notificationDatabase, item => ntfyClient.presentNotification(item));
+  await localNotifications.start();
+  await ntfyClient.subscribeToAllChannels();
+}).catch(error => {
+  console.error('[notifications] startup:', error);
+  dialog.showErrorBox('无法载入通知记录', `旧记录已保留。请检查存储空间及文件权限，然后重新启动 Noty。\n${error.message}`);
+  app.quit();
 });
 
 function loadTrayTemplateImage() {
@@ -626,9 +659,8 @@ function createTray() {
 }
 
 
-function updateTrayIcon() {
-  const notifications = store.get('notifications');
-  const unreadCount = groupNotifications(notifications.filter(isPendingNotification)).length;
+async function updateTrayIcon() {
+  const unreadCount = await notificationDatabase.pendingGroupCount();
 
   tray.setImage(loadTrayTemplateImage());
   tray.setTitle(unreadCount > 0 ? ` ${unreadCount}` : '');
@@ -670,9 +702,9 @@ function setupIPC() {
   });
   // 获取通知列表
   ipcMain.handle('get-notifications', async () => {
-    ntfyClient?.refreshPlaneNotifications();
+    const notifications = await notificationDatabase.list();
     let sessions = new Map();
-    if (store.get('notifications').some(item => item.type !== 'plane' && resolveNotificationTmuxTarget(item))) {
+    if (notifications.some(item => item.type !== 'plane' && resolveNotificationTmuxTarget(item))) {
       try {
         const output = await execTmux(['list-panes', '-a', '-F', '#{pane_id}\t#{session_name}']);
         sessions = new Map(output.split('\n').map(line => line.split('\t')).filter(parts => parts.length === 2));
@@ -680,7 +712,7 @@ function setupIPC() {
         // Notifications remain readable when tmux is stopped or unavailable.
       }
     }
-    return store.get('notifications').map(item => {
+    return notifications.map(item => {
       if (item.type === 'plane') return item;
       const target = resolveNotificationTmuxTarget(item);
       if (!target) return item;
@@ -691,58 +723,39 @@ function setupIPC() {
   });
 
   // 标记已读
-  ipcMain.handle('mark-as-read', (event, id) => {
-    const notifications = store.get('notifications');
-    const notification = notifications.find(n => n.id === id);
-    if (notification) {
-      notification.read = true;
-      store.set('notifications', notifications);
-      notificationsChanged();
-    }
-    return notifications;
+  ipcMain.handle('mark-as-read', async (event, id) => {
+    if (typeof id !== 'string') throw new Error('通知 ID 无效');
+    await notificationDatabase.markRead([id]);
+    notificationsChanged();
+    return notificationDatabase.list();
   });
 
   // 全部标记为已读
-  ipcMain.handle('mark-all-as-read', () => {
-    const notifications = store.get('notifications');
-    notifications.forEach(n => { n.read = true; });
-    store.set('notifications', notifications);
+  ipcMain.handle('mark-all-as-read', async () => {
+    await notificationDatabase.markRead();
     notificationsChanged();
-    return notifications;
+    return notificationDatabase.list();
   });
 
   // 批量标记已读
-  ipcMain.handle('mark-many-as-read', (event, ids) => {
-    const notifications = store.get('notifications');
-    const idSet = new Set(Array.isArray(ids) ? ids : []);
-    let changed = false;
-    notifications.forEach(n => {
-      if (idSet.has(n.id) && !n.read) {
-        n.read = true;
-        changed = true;
-      }
-    });
-    if (changed) {
-      store.set('notifications', notifications);
-      notificationsChanged();
-    }
-    return notifications;
+  ipcMain.handle('mark-many-as-read', async (event, ids) => {
+    await notificationDatabase.markRead(Array.isArray(ids) ? ids : []);
+    notificationsChanged();
+    return notificationDatabase.list();
   });
 
   // 清空已读
-  ipcMain.handle('clear-read', () => {
-    const notifications = clearReadNotifications(store.get('notifications'));
-    store.set('notifications', notifications);
+  ipcMain.handle('clear-read', async () => {
+    await notificationDatabase.clearRead();
     notificationsChanged();
-    return notifications;
+    return notificationDatabase.list();
   });
 
-  ipcMain.handle('set-notification-completed', (_event, id, completed) => {
+  ipcMain.handle('set-notification-completed', async (_event, id, completed) => {
     if (typeof id !== 'string' || typeof completed !== 'boolean') throw new Error('通知状态无效');
-    const notifications = setNotificationCompleted(store.get('notifications'), id, completed);
-    store.set('notifications', notifications);
+    await notificationDatabase.complete(id, completed);
     notificationsChanged();
-    return notifications;
+    return notificationDatabase.list();
   });
 
   ipcMain.handle('set-notifications-dismissed', (_event, ids, dismissed) => {
@@ -752,7 +765,7 @@ function setupIPC() {
 
   // Only reminders visible in the clicked group are dismissed after navigation.
   ipcMain.handle('jump-to-notification-target', async (event, id, options = {}) => {
-    const notifications = store.get('notifications');
+    const notifications = await notificationDatabase.list();
     const notification = notifications.find(n => n.id === id);
     if (!notification) return { success: false, reason: '提醒已不存在' };
     options = options && typeof options === 'object' ? options : {};
@@ -762,7 +775,7 @@ function setupIPC() {
       && isPendingNotification(item) === isPendingNotification(notification)
       && notificationGroupKey(item) === groupKey)).map(item => item.id);
     const result = await openNotificationTarget(notification, options);
-    if (result.success) dismissNotifications(ids, true);
+    if (result.success) await dismissNotifications(ids, true);
     return result;
   });
 
@@ -818,6 +831,7 @@ function setupIPC() {
 
   // 删除频道
   ipcMain.handle('remove-channel', (event, id) => {
+    if (id === LOCAL_CHANNEL.id) throw new Error('本机通知来源不能删除');
     const channels = store.get('channels').filter(c => c.id !== id);
     store.set('channels', channels);
 

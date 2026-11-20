@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Archive, BellPlus, Clock3, ExternalLink, Folder, GitBranch, Inbox, PanelRightOpen, Pin, PinOff, RotateCcw, Settings, Terminal, UserRound } from 'lucide-react';
 import type { AppNotification, Channel } from '../main/notification-types';
-import { isPendingNotification, planeCommentPreview, tmuxSourceProject } from '../main/notification-core';
+import { isPendingNotification, notificationDisplayTitle, planeCommentPreview, tmuxSourceProject } from '../main/notification-core';
 import { groupNotifications, notificationGroupKey } from '../main/notification-groups';
 import './renderer-api';
 
@@ -90,8 +90,8 @@ export function NotificationList({ desktop = false }: { desktop?: boolean }) {
         if (result.reason === 'source_project_mismatch') throw new Error('这条提醒记录的 pane 属于其他项目，无法确定原始来源');
         if (result.reason === 'source_project_unverified') throw new Error('无法确认这条提醒的来源项目，请检查目标 pane');
         if (result.reason === 'no_target') throw new Error('这条提醒未记录 tmux 位置，现有信息不足以恢复跳转目标');
-        if (result.reason === 'source_ambiguous') throw new Error('同项目、同分支有多个 AI 窗格，无法确定这条提醒的来源');
-        if (result.reason === 'source_unavailable') throw new Error('找不到与这条提醒匹配的 AI 窗格，原会话可能已关闭');
+        if (result.reason === 'source_ambiguous') throw new Error('有多个可能的来源窗格，无法确定这条提醒应打开哪一个');
+        if (result.reason === 'source_unavailable') throw new Error('未找到可确认的来源窗格，请确认原 pane 仍在对应项目中');
         throw new Error(item.type === 'plane' ? result.reason : '无法跳转到 tmux，请确认会话仍在运行');
       }
     });
@@ -111,9 +111,9 @@ export function NotificationList({ desktop = false }: { desktop?: boolean }) {
     const planeEvent = item.metadata?.plane;
     const isComment = plane && planeEvent?.event === 'issue_comment';
     const body = plane
-      ? comment ?? item.metadata?.plane?.parseError ?? item.message
+      ? isComment ? comment ?? '评论无正文' : planeEvent?.parseError ?? item.message
       : message.text;
-    const title = plane ? item.title : item.title.replace(/\s*\([^)]*\)\s*$/, '');
+    const title = notificationDisplayTitle(item);
     const target = plane ? item.metadata?.plane?.url : item.metadata?.tmux?.target;
     const tmuxSession = item.metadata?.tmux?.session && !item.metadata.tmux.session.startsWith('%') ? item.metadata.tmux.session : '会话不可用';
     const sourceName = source?.name || '已移除的通知来源';
@@ -122,7 +122,7 @@ export function NotificationList({ desktop = false }: { desktop?: boolean }) {
     const dismissLabel = dismissed ? (grouped ? '恢复本组提醒' : '恢复提醒') : grouped ? '收起本组提醒' : '收起提醒';
     return <article key={item.id} id={`notification-${item.id}`} data-notification-id={item.id} data-keyboard-item tabIndex={-1} className={`notification-item ${dismissed ? 'read' : ''} ${item.id === selection.id ? 'is-selected' : ''}`}>
       <div className="notification-header">
-        <span className="notification-type">{plane ? 'RtiTek Plane' : 'Tmux AI agent'}{grouped ? <span className="notification-count">{group.length} 条</span> : null}</span>
+        <span className="notification-type">{plane ? 'RtiTek Plane' : 'Tmux'}{grouped ? <span className="notification-count">{group.length} 条</span> : null}</span>
         <time className="notification-time" dateTime={new Date(item.timestamp).toISOString()} title={`收到于 ${new Date(item.timestamp).toLocaleString()}`}>{formatTime(item.timestamp)}</time>
       </div>
       <div className="notification-heading">
@@ -165,7 +165,7 @@ export function NotificationList({ desktop = false }: { desktop?: boolean }) {
         <summary>{message.isJson ? '原始 JSON' : '原始内容'}</summary>
         <pre className="notification-message">{message.text}</pre>
       </details> : null}
-      {sourceName !== title ? <div className="notification-bottom">
+      {plane && sourceName !== title ? <div className="notification-bottom">
         <span className="notification-channel">{sourceName}</span>
       </div> : null}
       {plane && !target ? <div className="notification-warning">缺少任务链接</div> : null}

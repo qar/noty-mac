@@ -46,9 +46,9 @@ Noty 项目里附带了一个 bash 上报脚本，位于 `scripts/noty-status`�
 
 ### 安装（推荐：Noty Settings 向导）
 
-打开 **Noty · 设置 · AI 集成**，会看到两步向导：
+打开 **Noty · 设置 · AI 集成**。先链接本地通知命令 `noty-notify`，详见[本机通知说明](local-notifications.md)。后续两步配置活动状态：
 
-1. **第 1 步**：把 `noty-status` 链接到 PATH。点旁边的 [复制]，粘贴到终端执行。命令的形状是：
+1. **链接 noty-status**：把 `noty-status` 链接到 PATH。点旁边的 [复制]，粘贴到终端执行。命令的形状是：
 
    ```bash
    mkdir -p ~/.local/bin && ln -sf '<noty-status 源路径>' ~/.local/bin/noty-status
@@ -56,7 +56,7 @@ Noty 项目里附带了一个 bash 上报脚本，位于 `scripts/noty-status`�
 
    源路径在 dev 阶段是仓库里的 `scripts/noty-status`，打包后是 `Noty.app/Contents/Resources/noty-status`。Settings 向导会自动填对。
 
-2. **第 2 步**：把推荐的 CLAUDE.md 片段追加到 `~/.claude/CLAUDE.md`。点 [复制] 后自己去粘贴。片段被 `<!-- BEGIN NOTY-STATUS -->` 注释标记包裹，Noty 只用它检测"是否已安装"，永远不会自动写入。
+2. **配置 agent**：把推荐的 CLAUDE.md 片段追加到 `~/.claude/CLAUDE.md`。点 [复制] 后自己去粘贴。片段被 `<!-- BEGIN NOTY-STATUS -->` 注释标记包裹，Noty 只用它检测"是否已安装"，永远不会自动写入。
 
 安装完成后切回 Settings 窗口（focus 事件），状态点会自动变绿。
 

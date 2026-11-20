@@ -9,8 +9,43 @@ bd ready              # Find available work
 bd show <id>          # View issue details
 bd update <id> --claim  # Claim work atomically
 bd close <id>         # Complete work
-bd sync               # Sync with git
+bd export -o .beads/issues.jsonl  # Export the snapshot before committing
 ```
+
+## Git Flow
+
+本仓库使用 git flow，直接运行 Git 命令。沿用现有的 `feat/`、`fix/` 前缀。
+
+| 分支 | 用途 | 创建基点 | PR 目标 |
+| --- | --- | --- | --- |
+| `main` | 已发布代码，每个版本有 `v<版本号>` 标签 | 发布或紧急修复合并 | — |
+| `develop` | 下一版本的集成分支 | 用户确认的初始提交 | — |
+| `feat/<短名>`、`fix/<短名>` | 一个功能或一次修复 | 最新 `develop` | `develop` |
+| `release/<版本号>` | 版本号、发布说明和发布修复 | `develop` | `main`，发布后合并回 `develop` |
+| `hotfix/<版本号>` | 已发布版本的紧急修复 | `main` | `main`，发布后合并回 `develop` |
+
+开始工作前：
+
+1. 检查 `git status --short --branch`、当前分支和远端状态，保留用户已有改动。
+2. 运行 `git fetch origin`，从最新 `develop` 创建本次工作的 `feat/` 或 `fix/` 分支。
+3. 本地和远端都没有 `develop` 时，先让用户指定创建基点，再创建和推送。
+4. 一个功能分支只做一件事。直接提交的目标必须是功能、发布或紧急修复分支。
+
+提交和 PR：
+
+- 提交前检查全部变更，并将 Beads 导出快照加入同一次提交。
+- 功能和修复完成后创建指向 `develop` 的 PR。PR 说明最终行为、验证结果和已知限制。
+- 用户要求提交 PR 时，授权包含该 PR 所需的功能分支推送。其他推送先确认是否已有授权。
+- 已推送分支也要核对 PR 是否存在；交付时提供 PR 链接。
+- 已有旧分支先比较补丁是否已进入集成分支。已包含的改动不重复提交 PR。
+- 旧分支与当前实现冲突时，保留原提交，创建草稿 PR 并写明冲突及未验证范围。
+
+合并和发布：
+
+- 合并功能、发布和紧急修复分支时使用 `git merge --no-ff`，保留分支历史。
+- 发布前提高版本号。合并到 `main`、打标签、发布和删除远端分支前，核对用户对该操作的明确授权。
+- `release/` 或 `hotfix/` 合并到 `main` 后，在该版本提交上打标签，再合并回 `develop`。
+- 功能分支在 PR 合并后清理。远端分支删除仍需用户授权。
 
 ## Non-Interactive Shell Commands
 
@@ -103,11 +138,10 @@ bd close bd-42 --reason "Completed" --json
 
 ### Auto-Sync
 
-bd automatically syncs with git:
-
-- Exports to `.beads/issues.jsonl` after changes (5s debounce)
-- Imports from JSONL when newer (e.g., after `git pull`)
-- No manual export/import needed!
+Use the tracked `.beads/issues.jsonl` snapshot to share issue state through Git.
+Run `bd export -o .beads/issues.jsonl` and stage it before every commit that changes issue state.
+The installed CLI has no `bd sync` subcommand, and this repository has no Dolt remote.
+Do not rely on background export or Git hooks to stage the snapshot.
 
 ### Important Rules
 
@@ -123,29 +157,21 @@ For more details, see README.md and docs/QUICKSTART.md.
 
 ## Landing the Plane (Session Completion)
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+**When ending a work session**, complete these steps within the user's authorized scope.
 
 **MANDATORY WORKFLOW:**
 
 1. **File issues for remaining work** - Create issues for anything that needs follow-up
 2. **Run quality gates** (if code changed) - Tests, linters, builds
 3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd sync
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+4. **Commit and publish the PR** - Export and stage the Beads snapshot, then commit on the work branch. Fetch before pushing. Rebase only an unpublished work branch; coordinate changes to shared history. Push the work branch when authorized and create its PR against the Git Flow target above.
+5. **Verify** - Check the PR base and head, the remote commit, and the worktree status. Preserve user changes and stashes.
+6. **Hand off** - Provide the PR link, validation results, and any pending release or merge work.
 
 **CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
+- A PR request is complete when the authorized work is committed, pushed, and linked to its PR.
+- When authorization is required, finish the local changes and checks first, then state the exact pending operation.
+- Resolve push failures without discarding user work or rewriting shared history without agreement.
 
 <!-- END BEADS INTEGRATION -->
 
@@ -162,7 +188,7 @@ git commit -m "..."
 ```
 
 - `.beads/issues.jsonl` is tracked in git (`.beads/.gitignore` explicitly does NOT ignore it). Every commit that changes beads state should also carry the updated JSONL snapshot in the same commit, so `git log -p -- .beads/issues.jsonl` stays reviewable.
-- bd's own auto-sync (5s debounce) only writes to disk between operations; it does not stage anything. Only your explicit `git add` gets the file into the commit.
+- Background export, when available, does not stage the snapshot. Only your explicit `git add` gets the file into the commit.
 
 Agent rules:
 

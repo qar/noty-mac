@@ -191,9 +191,22 @@ async function reminderPage(t, entry, width) {
     window.calls = [];
     window.failJump = false;
     window.pushReminder = () => { window.items.unshift(make('new', 0)); handlers.updated?.(); };
+    window.updateComment = html => {
+      window.items[0].message = JSON.stringify({ event: 'issue_comment', action: 'created', data: { comment_html: html } });
+      window.items[0].metadata.plane.rawPayload = window.items[0].message;
+      handlers.updated?.();
+    };
+    window.showAgentReminders = () => {
+      window.items = ['Codex 更新', 'Claude Code 更新'].map((title, index) => ({
+        id: `agent-${index}`, channelId: 'ai', type: 'tmux-agent', title, read: false,
+        timestamp: Date.now() - index * 60000, message: '构建完成，等待下一步确认。',
+        metadata: { project: { name: 'sample-project', branch: 'main' }, tmux: { target: `%${91 + index}`, session: 'sample-session' } },
+      }));
+      handlers.updated?.();
+    };
     window.api = {
       getNotifications: async () => window.items,
-      getChannels: async () => [{ id: 'plane', name: 'RtiTek Plane', type: 'plane' }],
+      getChannels: async () => [{ id: 'plane', name: 'RtiTek Plane', type: 'plane' }, { id: 'ai', name: 'Claude Code 更新', type: 'tmux-agent' }],
       getSelectedNotification: async () => null,
       onNewNotification: on('new'), onWindowShown: on('shown'), onNotificationsUpdated: on('updated'), onNotificationSelected: on('selected'),
       jumpToNotificationTarget: async (id, options) => {
@@ -220,6 +233,43 @@ async function reminderPage(t, entry, width) {
 }
 
 for (const [entry, width] of [['main', 440], ['index', 380]]) {
+  test(`${entry}: AI reminders hide agent branding and keep their original navigation targets`, async t => {
+    const page = await reminderPage(t, entry, width);
+    await page.evaluate(() => window.showAgentReminders());
+    await page.locator('#notification-agent-0').waitFor();
+    assert.equal(await page.getByRole('button', { name: 'AI 通知', exact: true }).count(), 2);
+    assert.equal(await page.locator('.notification-bottom').count(), 0);
+    assert.doesNotMatch(await page.locator('.notification-list').textContent(), /Codex|Claude/);
+    assert.deepEqual(await page.evaluate(() => window.items.map(item => ({ title: item.title, target: item.metadata.tmux.target }))), [
+      { title: 'Codex 更新', target: '%91' }, { title: 'Claude Code 更新', target: '%92' },
+    ]);
+    await page.screenshot({ path: `/tmp/noty-unified-agents-${entry}.png`, caret: 'initial' });
+    await page.locator('#notification-agent-0 [data-keyboard-open]').click();
+    await page.waitForFunction(() => !document.getElementById('notification-agent-0'));
+    assert.deepEqual(await page.evaluate(() => window.calls), [{ id: 'agent-0', options: { notificationIds: ['agent-0'] } }]);
+    assert.equal(await page.locator('#notification-agent-1').count(), 1);
+  });
+
+  test(`${entry}: Plane reply shows only the new comment and keeps full raw JSON collapsed`, async t => {
+    const page = await reminderPage(t, entry, width);
+    const quote = '<blockquote data-reply-to="earlier-comment"><p>旧评论作者</p><p>被引用的旧评论内容</p></blockquote>';
+    await page.evaluate(html => window.updateComment(html), quote + '<p>麻烦世新确认下固件行为</p>');
+    const article = page.locator('#notification-1');
+    const body = article.locator(':scope > .notification-message');
+    await page.waitForFunction(() => document.querySelector('#notification-1 > .notification-message')?.textContent === '麻烦世新确认下固件行为');
+    assert.equal(await body.textContent(), '麻烦世新确认下固件行为');
+    assert.equal(await article.locator('.notification-raw').evaluate(details => details.open), false);
+    assert.equal(await article.locator('.notification-comment-author').textContent(), '测试用户');
+    await page.screenshot({ path: `/tmp/noty-plane-reply-${entry}.png`, caret: 'initial' });
+    await article.locator('.notification-raw > summary').click();
+    assert.match(await article.locator('.notification-raw pre').textContent(), /被引用的旧评论内容/);
+    await article.locator('.notification-raw > summary').click();
+    await page.evaluate(html => window.updateComment(html), quote + '<p><br></p>');
+    await page.waitForFunction(() => document.querySelector('#notification-1 > .notification-message')?.textContent === '评论无正文');
+    assert.equal(await body.textContent(), '评论无正文');
+    assert.deepEqual(await page.evaluate(() => window.calls), []);
+  });
+
   test(`${entry}: reminder navigation preserves groups, follows live updates and opens through the existing API`, async t => {
     const page = await reminderPage(t, entry, width);
     await page.keyboard.press('j');
