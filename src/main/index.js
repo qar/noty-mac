@@ -53,15 +53,18 @@ async function openNotificationTarget(notification, options = {}) {
     }
   }
   let target = resolveNotificationTmuxTarget(notification);
+  const allowDirectory = Boolean(notification?.metadata?.tmux?.sourceProject);
   const expectedProject = notification?.metadata?.tmux?.sourceProject || notification?.metadata?.project?.name;
+  const readCheckout = target => readNotificationCheckout(target, { allowDirectory });
+  let verifiedCheckout;
   let invalidReason;
   if (target && expectedProject) {
     try {
-      const checkout = await readNotificationCheckout(target);
+      const checkout = await readCheckout(target);
       if (!checkout || path.basename(checkout.root) !== expectedProject) {
         invalidReason = checkout ? 'source_project_mismatch' : 'source_project_unverified';
         target = null;
-      }
+      } else verifiedCheckout = checkout;
     } catch {
       invalidReason = 'source_project_unverified';
       target = null;
@@ -73,7 +76,7 @@ async function openNotificationTarget(notification, options = {}) {
       const [snapshot, processes] = await Promise.all([
         execTmux(['list-panes', '-a', '-F', TMUX_PANE_SNAPSHOT_FORMAT]), listProcesses(),
       ]);
-      recovered = await recoverNotificationTarget(notification, parseTmuxPaneSnapshots(snapshot), processes, readNotificationCheckout);
+      recovered = await recoverNotificationTarget(notification, parseTmuxPaneSnapshots(snapshot), processes, readCheckout);
       if (!recovered.target) return { success: false, reason: recovered.reason === 'no_target' ? invalidReason || recovered.reason : recovered.reason };
       target = recovered.target;
     } catch {
@@ -83,18 +86,30 @@ async function openNotificationTarget(notification, options = {}) {
   const chainTestApp = options.chainTestApp || notification?.metadata?.chainTestApp || null;
   return jumpToTmuxTarget(target, { chainTestApp,
     expectedProject,
-    expectedCheckout: recovered?.checkout });
+    allowDirectory,
+    expectedCheckout: recovered?.checkout || verifiedCheckout });
 }
 
-async function readNotificationCheckout(target) {
+async function readNotificationCheckout(target, { allowDirectory = false } = {}) {
   const panePath = await execTmux(['display-message', '-p', '-t', target, '#{pane_current_path}']);
   const git = (args) => new Promise(resolve => {
-    execFile('/usr/bin/git', ['-C', panePath, ...args], { timeout: 5000 }, (error, stdout) => resolve(error ? null : stdout.trim()));
+    execFile('/usr/bin/git', ['-C', panePath, ...args], { timeout: 5000, env: { ...process.env, LC_ALL: 'C' } },
+      (error, stdout, stderr) => resolve({ error, output: stdout?.trim() || '', stderr: stderr?.trim() || '' }));
   });
   const root = await git(['rev-parse', '--show-toplevel']);
-  if (!root) return null;
+  if (root.error || !root.output) {
+    if (!allowDirectory) return null;
+    // Only a confirmed non-repository may use the sender's directory identity.
+    // Git failures (permissions, corrupt metadata, timeouts) remain unverified.
+    if (root.error && path.isAbsolute(panePath)
+      && /^fatal: not a git repository \(or any (?:of the parent directories|parent up to mount point\b)/.test(root.stderr)) {
+      return { root: panePath, branch: null };
+    }
+    throw new Error('source_project_unverified');
+  }
   const branch = await git(['branch', '--show-current']);
-  return branch === null ? null : { root, branch };
+  if (branch.error) throw new Error('source_project_unverified');
+  return { root: root.output, branch: branch.output };
 }
 
 function publicChannels() {
@@ -293,21 +308,13 @@ async function jumpToTmuxTarget(target, options = {}) {
     : null;
 
   try {
-    if (options.expectedCheckout) {
-      const current = await readNotificationCheckout(target);
-      if (!current || current.root !== options.expectedCheckout.root || current.branch !== options.expectedCheckout.branch) {
+    if (options.expectedCheckout || options.expectedProject) {
+      const current = await readNotificationCheckout(target, { allowDirectory: options.allowDirectory });
+      if (!current || options.expectedCheckout
+        && (current.root !== options.expectedCheckout.root || current.branch !== options.expectedCheckout.branch)) {
         return { success: false, reason: 'source_project_unverified' };
       }
-    }
-    if (options.expectedProject) {
-      const panePath = await execTmux(['display-message', '-p', '-t', target, '#{pane_current_path}']);
-      const projectRoot = await new Promise(resolve => {
-        execFile('/usr/bin/git', ['-C', panePath, 'rev-parse', '--show-toplevel'], { timeout: 5000 }, (error, stdout) => {
-          resolve(error ? null : stdout.trim());
-        });
-      });
-      if (!projectRoot) return { success: false, reason: 'source_project_unverified' };
-      if (path.basename(projectRoot) !== options.expectedProject) {
+      if (options.expectedProject && path.basename(current.root) !== options.expectedProject) {
         return { success: false, reason: 'source_project_mismatch' };
       }
     }
