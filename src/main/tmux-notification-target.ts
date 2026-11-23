@@ -5,7 +5,7 @@ import type { TmuxPaneSnapshot } from './types';
 
 export interface NotificationCheckout {
   root: string;
-  branch: string;
+  branch: string | null;
 }
 
 type RecoveredTarget = { target: string; checkout: NotificationCheckout }
