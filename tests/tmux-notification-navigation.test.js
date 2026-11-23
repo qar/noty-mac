@@ -3,15 +3,17 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-function navigation({ project = 'noty-mac', root = '/work/noty-mac', gitFails = false, tmuxUnavailable = false,
+function navigation({ project = 'noty-mac', root = '/work/noty-mac', gitFails = false, nonGit = false, sourceProject, directoryChanges = false, tmuxUnavailable = false,
   target = '%31', branch, currentBranch = branch, duplicateAgent = false, unrelatedAgentOutsideGit = false, branchChanges = false, staleTarget = false, browserFails = false, onOpen } = {}) {
   const state = { notifications: [{ id: 'one', channelId: 'ai', title: 'Codex update', read: false, message: 'Done',
-    metadata: { ...(target ? { tmux: { target } } : {}), ...(project ? { project: { name: project, branch } } : {}) } }] };
+    metadata: { ...(target || sourceProject ? { tmux: { ...(target ? { target } : {}), ...(sourceProject ? { sourceProject } : {}) } } : {}),
+      ...(project ? { project: { name: project, branch } } : {}) } }] };
   const commands = [];
   const handlers = new Map();
   const trayMessages = [], desktopMessages = [];
   const notificationWindow = messages => ({ isDestroyed: () => false, webContents: { send: (...args) => messages.push(args) } });
   let branchReads = 0;
+  let directoryReads = 0;
   const context = {
     module: { exports: {} }, __dirname: '/app/dist/main', process, console, setTimeout,
     database: require('./helpers/notification-repository')(state),
@@ -26,12 +28,16 @@ function navigation({ project = 'noty-mac', root = '/work/noty-mac', gitFails = 
         if (file === '/bin/ps') return callback(null, `100 1 /bin/zsh\n101 100 codex\n200 1 /bin/zsh\n${duplicateAgent || unrelatedAgentOutsideGit ? '201 200 codex' : ''}`);
         if (args[0] === 'list-panes') return callback(tmuxUnavailable ? new Error('No tmux server') : null,
           args.at(-1).includes('#{pane_pid}') ? '%89\t100\thl-test-reports\tmain\t0\n%90\t200\thl-test-reports\tmain\t1\n' : '%31\thl-sensor\n%48\tnoty-mac\n');
+        if (file.endsWith('git') && nonGit) return callback(new Error('Git failed'), '',
+          gitFails ? 'fatal: detected dubious ownership in repository' : 'fatal: not a git repository (or any of the parent directories): .git');
         if (file.endsWith('git')) return callback(gitFails || args[1] === '/work/no-repository' ? new Error('Not a repository') : null,
           `${args.includes('branch') ? (branchChanges && branchReads++ > 0 ? 'changed' : currentBranch) : args[1] === '/work/reused' ? '/work/reused' : root}\n`);
         if (args[0] === 'display-message') {
           if (staleTarget === 'missing' && args.includes(target)) return callback(new Error('Pane does not exist'));
           if (unrelatedAgentOutsideGit && args.includes('%90') && args.at(-1) === '#{pane_current_path}') return callback(null, '/work/no-repository\n');
-          const value = args.at(-1) === '#{pane_current_path}' ? (staleTarget && args.includes(target) ? '/work/reused' : `${root}/src`) : args.at(-1) === '#S' ? 'session' : 'session:1';
+          const value = args.at(-1) === '#{pane_current_path}' ? (staleTarget && args.includes(target) ? '/work/reused'
+            : nonGit ? (directoryChanges && directoryReads++ > 0 ? `/other/${project || sourceProject}` : root) : `${root}/src`)
+            : args.at(-1) === '#S' ? 'session' : 'session:1';
           return callback(null, `${value}\n`);
         }
         if (args[0] === 'list-clients') return callback(null, '/dev/ttys001\tsession\txterm-kitty\t123\n');
@@ -214,6 +220,50 @@ test('an unavailable source checkout preserves the reminder without opening a te
   assert.equal((await app.jump()).reason, 'source_project_unverified');
   assert.equal(app.state.notifications[0].read, false);
   assert.equal(app.commands.some(command => command[0] === '/usr/bin/open'), false);
+});
+
+test('a notification from a non-Git source directory navigates to its exact pane', async () => {
+  const app = navigation({ project: null, sourceProject: 'otm-bridge', root: '/work/otm-bridge', target: '%26', nonGit: true, duplicateAgent: true });
+  const result = await app.jump();
+  assert.equal(result.success, true, JSON.stringify(result));
+  assert.ok(app.commands.some(command => command.includes('select-pane') && command.includes('%26')));
+  assert.equal(app.commands.some(command => command.includes('list-panes')), false);
+  assert.equal(app.state.notifications[0].read, true);
+});
+
+test('a non-Git source directory recovers only a unique source pane', async () => {
+  for (const staleTarget of ['missing', true]) {
+    const app = navigation({ project: null, sourceProject: 'otm-bridge', root: '/work/otm-bridge', nonGit: true, staleTarget });
+    const result = await app.jump();
+    assert.equal(result.success, true, JSON.stringify(result));
+    assert.ok(app.commands.some(command => command.includes('select-pane') && command.includes('%89')));
+    assert.equal(app.commands.some(command => command.includes('select-pane') && command.includes('%31')), false);
+    assert.equal(app.state.notifications[0].read, true);
+  }
+});
+
+test('non-Git source validation retains reminders on ambiguity, Git errors or a directory change', async () => {
+  for (const options of [
+    { target: null, duplicateAgent: true, reason: 'source_ambiguous' },
+    { gitFails: true, reason: 'source_project_unverified' },
+    { directoryChanges: true, reason: 'source_project_unverified' },
+    { target: null, directoryChanges: true, reason: 'source_project_unverified' },
+    { root: '/work/unrelated', reason: 'source_unavailable' },
+  ]) {
+    const app = navigation({ project: null, sourceProject: 'otm-bridge', root: '/work/otm-bridge', nonGit: true, ...options });
+    const result = await app.jump();
+    assert.equal(result.success, false, JSON.stringify(options));
+    assert.equal(result.reason, options.reason, JSON.stringify(options));
+    assert.equal(app.commands.some(command => command.includes('select-pane') || command[0] === '/usr/bin/open'), false);
+    assert.equal(app.state.notifications[0].read, false);
+  }
+});
+
+test('a legacy Git project name alone does not authorize a non-Git directory', async () => {
+  const app = navigation({ project: 'otm-bridge', root: '/work/otm-bridge', nonGit: true });
+  assert.equal((await app.jump()).reason, 'source_project_unverified');
+  assert.equal(app.commands.some(command => command.includes('select-pane') || command[0] === '/usr/bin/open'), false);
+  assert.equal(app.state.notifications[0].read, false);
 });
 
 test('successful navigation never dismisses another project sharing a corrupted target', async () => {
