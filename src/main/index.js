@@ -21,6 +21,7 @@ const { registerSettingsIpc } = require('./ipc-settings');
 const { registerProjectsIpc } = require('./ipc-projects');
 const { registerWorkflowIpc } = require('./ipc-workflow');
 const { recoverNotificationTarget } = require('./tmux-notification-target');
+const { resolveCodexThreadSource, sameCodexSource } = require('./codex-tmux-source');
 const { setDockIcon } = require('./app-icon');
 const {
   TMUX_SESSION_SNAPSHOT_FORMAT,
@@ -41,6 +42,49 @@ function isValidTmuxTarget(target) {
     && /^[A-Za-z0-9_.:%@+/-]+$/.test(target);
 }
 
+const pendingCodexSources = new Map();
+const sourceEnrichmentJobs = new Set();
+
+function notificationThreadId(notification) {
+  return notification?.metadata?.agent?.sourceThreadId || notification?.metadata?.agent?.originThreadId || notification?.metadata?.agent?.threadId;
+}
+
+async function readCodexPaneSource(threadId, coalesce = false) {
+  if (typeof threadId !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(threadId)) return { reason: 'unsupported' };
+  if (coalesce && pendingCodexSources.has(threadId)) return pendingCodexSources.get(threadId);
+  const read = (async () => {
+    try {
+      const [snapshot, processes] = await Promise.all([
+        execTmux(['list-panes', '-a', '-F', TMUX_PANE_SNAPSHOT_FORMAT]), listProcesses(),
+      ]);
+      return await resolveCodexThreadSource(threadId, parseTmuxPaneSnapshots(snapshot), processes);
+    } catch { return { reason: 'source_project_unverified' }; }
+  })();
+  if (coalesce) {
+    pendingCodexSources.set(threadId, read);
+    void read.finally(() => { if (pendingCodexSources.get(threadId) === read) pendingCodexSources.delete(threadId); });
+  }
+  return read;
+}
+
+function metadataWithCodexSource(notification, source, checkout) {
+  return { ...notification.metadata,
+    agent: { ...notification.metadata?.agent, sourceThreadId: source.threadId },
+    tmux: { ...notification.metadata?.tmux, target: source.target, session: source.session, sourceProject: path.basename(checkout.root) },
+  };
+}
+
+async function enrichNotificationSource(notification) {
+  if (notification.type === 'plane') return false;
+  const source = await readCodexPaneSource(notificationThreadId(notification), true);
+  if (!source.target) return false;
+  const checkout = await readNotificationCheckout(source.target, { allowDirectory: true });
+  if (!checkout) return false;
+  const current = await notificationDatabase.get(notification.id);
+  if (!current) return false;
+  return Boolean(await notificationDatabase.updateContent([{ ...current, metadata: metadataWithCodexSource(current, source, checkout) }]));
+}
+
 async function openNotificationTarget(notification, options = {}) {
   if (notification?.type === 'plane') {
     const url = safeWebUrl(notification.metadata?.plane?.url);
@@ -52,20 +96,31 @@ async function openNotificationTarget(notification, options = {}) {
       return { success: false, reason: '无法打开浏览器，请重试' };
     }
   }
-  let target = resolveNotificationTmuxTarget(notification);
-  const allowDirectory = Boolean(notification?.metadata?.tmux?.sourceProject);
-  const expectedProject = notification?.metadata?.tmux?.sourceProject || notification?.metadata?.project?.name;
+  const source = await readCodexPaneSource(notificationThreadId(notification));
+  const storedTarget = resolveNotificationTmuxTarget(notification);
+  const agent = notification?.metadata?.agent;
+  if (!source.target && (source.reason !== 'unsupported' || agent?.sourceThreadId || agent?.originThreadId && !storedTarget)) {
+    return { success: false, reason: source.reason === 'unsupported' ? 'source_project_unverified' : source.reason };
+  }
+  let target = source.target || storedTarget;
+  const allowDirectory = Boolean(source.target || notification?.metadata?.tmux?.sourceProject);
+  let expectedProject = notification?.metadata?.tmux?.sourceProject || notification?.metadata?.project?.name;
   const readCheckout = target => readNotificationCheckout(target, { allowDirectory });
   let verifiedCheckout;
   let invalidReason;
-  if (target && expectedProject) {
+  if (target && (expectedProject || source.target)) {
     try {
       const checkout = await readCheckout(target);
-      if (!checkout || path.basename(checkout.root) !== expectedProject) {
+      if (!checkout || (!source.target && path.basename(checkout.root) !== expectedProject)) {
+        if (source.target) return { success: false, reason: 'source_project_unverified' };
         invalidReason = checkout ? 'source_project_mismatch' : 'source_project_unverified';
         target = null;
-      } else verifiedCheckout = checkout;
+      } else {
+        verifiedCheckout = checkout;
+        if (source.target) expectedProject = path.basename(checkout.root);
+      }
     } catch {
+      if (source.target) return { success: false, reason: 'source_project_unverified' };
       invalidReason = 'source_project_unverified';
       target = null;
     }
@@ -84,10 +139,13 @@ async function openNotificationTarget(notification, options = {}) {
     }
   }
   const chainTestApp = options.chainTestApp || notification?.metadata?.chainTestApp || null;
-  return jumpToTmuxTarget(target, { chainTestApp,
+  const result = await jumpToTmuxTarget(target, { chainTestApp,
     expectedProject,
     allowDirectory,
+    expectedCodexSource: source.target ? source : null,
     expectedCheckout: recovered?.checkout || verifiedCheckout });
+  return result.success && source.target
+    ? { ...result, sourceMetadata: metadataWithCodexSource(notification, source, verifiedCheckout) } : result;
 }
 
 async function readNotificationCheckout(target, { allowDirectory = false } = {}) {
@@ -308,6 +366,10 @@ async function jumpToTmuxTarget(target, options = {}) {
     : null;
 
   try {
+    if (options.expectedCodexSource) {
+      const current = await readCodexPaneSource(options.expectedCodexSource.threadId);
+      if (!sameCodexSource(current, options.expectedCodexSource)) return { success: false, reason: 'source_project_unverified' };
+    }
     if (options.expectedCheckout || options.expectedProject) {
       const current = await readNotificationCheckout(target, { allowDirectory: options.allowDirectory });
       if (!current || options.expectedCheckout
@@ -418,6 +480,7 @@ app.on('before-quit', event => {
   ntfyClient?.unsubscribeAll();
   void (async () => {
     await localNotifications?.stop();
+    await Promise.allSettled([...sourceEnrichmentJobs]);
     await ntfyClient?.planeDetailsQueue;
     await notificationDatabase.close();
   })().catch(error => console.error('[notifications] shutdown:', error.message)).finally(() => app.quit());
@@ -492,7 +555,14 @@ app.whenReady().then(async () => {
   ntfyClient.on('notification-updated', notificationsChanged);
 
   // 订阅所有频道
-  localNotifications = new LocalNotifications(notificationDatabase, item => ntfyClient.presentNotification(item));
+  localNotifications = new LocalNotifications(notificationDatabase, item => {
+    ntfyClient.presentNotification(item);
+    const job = enrichNotificationSource(item)
+      .then(changed => { if (changed && !quitting) notificationsChanged(); })
+      .catch(error => console.error('[notification-source]', error.message))
+      .finally(() => sourceEnrichmentJobs.delete(job));
+    sourceEnrichmentJobs.add(job);
+  });
   await localNotifications.start();
   await ntfyClient.subscribeToAllChannels();
 }).catch(error => {
@@ -782,8 +852,11 @@ function setupIPC() {
       && isPendingNotification(item) === isPendingNotification(notification)
       && notificationGroupKey(item) === groupKey)).map(item => item.id);
     const result = await openNotificationTarget(notification, options);
-    if (result.success) await dismissNotifications(ids, true);
-    return result;
+    if (result.success) {
+      if (result.sourceMetadata) await notificationDatabase.updateContent([{ ...notification, metadata: result.sourceMetadata }]);
+      await dismissNotifications(ids, true);
+    }
+    return { success: result.success, ...(result.reason ? { reason: result.reason } : {}) };
   });
 
   // 获取频道列表

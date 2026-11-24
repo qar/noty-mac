@@ -86,7 +86,7 @@ codex_exec_parent_thread() {
   done
 }
 
-codex_origin_cwd() {
+codex_origin_context() {
   local thread="$1" header="" parent="" visited=" " depth
   for ((depth=0; depth<16; depth++)); do
     [[ "$visited" != *" $thread "* ]] || return 0
@@ -98,7 +98,7 @@ codex_origin_cwd() {
       parent="$(codex_exec_parent_thread "$thread")"
     fi
     if [ -z "$parent" ]; then
-      printf '%s' "$header" | jq -r '.cwd'
+      printf '%s' "$header" | jq -c '{id, cwd}'
       return 0
     fi
     thread="$parent"
@@ -107,6 +107,7 @@ codex_origin_cwd() {
 
 SOURCE_TMUX_PANE="${TMUX_PANE:-}"
 SOURCE_PROJECT=""
+ORIGIN_THREAD_ID=""
 TMUX_TARGET="$(echo "$INPUT" | jq -r '.tmux.target // .metadata.tmux.target // .tmuxTarget // .tmux_target // .target // empty')"
 TMUX_SESSION="$(echo "$INPUT" | jq -r '.tmux.session // .metadata.tmux.session // .tmux_session // empty')"
 TMUX_WINDOW="$(echo "$INPUT" | jq -r '.tmux.window // .metadata.tmux.window // .tmux_window // empty')"
@@ -122,7 +123,9 @@ fi
 if [ -z "$TMUX_TARGET" ] && command -v tmux >/dev/null 2>&1; then
   SOURCE_CWD="${CWD:-$PWD}"
   ORIGIN_HEADER="$(codex_session_header "${CODEX_THREAD_ID:-}")"
-  THREAD_CWD="$(codex_origin_cwd "${CODEX_THREAD_ID:-}")"
+  ORIGIN_CONTEXT="$(codex_origin_context "${CODEX_THREAD_ID:-}")"
+  THREAD_CWD="$(printf '%s' "$ORIGIN_CONTEXT" | jq -r '.cwd // empty')"
+  ORIGIN_THREAD_ID="$(printf '%s' "$ORIGIN_CONTEXT" | jq -r '.id // empty')"
   [ -z "$THREAD_CWD" ] || SOURCE_CWD="$THREAD_CWD"
   SOURCE_CWD="$(cd "$SOURCE_CWD" 2>/dev/null && pwd -P || printf '%s' "$SOURCE_CWD")"
   SOURCE_ROOT="$(git -C "$SOURCE_CWD" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$SOURCE_CWD")"
@@ -239,11 +242,12 @@ if [ "$TRANSPORT" = local ]; then
   MESSAGE_ID="$(printf '%s' "$INPUT" | jq -r '.id // empty')"
   [ -n "$MESSAGE_ID" ] || MESSAGE_ID="$(uuidgen | tr '[:upper:]' '[:lower:]')"
   RECORD="$(printf '%s' "$PAYLOAD" | jq -c \
-    --arg id "$MESSAGE_ID" --arg repo "$REPO" --arg branch "$BRANCH" --arg thread "${CODEX_THREAD_ID:-}" '
+    --arg id "$MESSAGE_ID" --arg repo "$REPO" --arg branch "$BRANCH" --arg thread "${CODEX_THREAD_ID:-}" --arg origin "$ORIGIN_THREAD_ID" '
     {id: $id, channelId: "local-tmux", type: "tmux-agent", title, message, timestamp: (now * 1000 | floor), read: false,
       metadata: ((.metadata // {})
         + (if $repo != "" then {project: {name: $repo, branch: $branch}} else {} end)
-        + (if $thread != "" then {agent: {threadId: $thread}} else {} end))}
+        + (if $thread != "" then {agent: ({threadId: $thread}
+            + (if $origin != "" and $origin != $thread then {originThreadId: $origin} else {} end))} else {} end))}
     | . + {groupKey: (if .metadata.tmux.target then
         ["tmux", .channelId, (.metadata.tmux.sourceProject // .metadata.project.name // ""), .metadata.tmux.target]
         else ["notification", .id] end | tojson)}')"
