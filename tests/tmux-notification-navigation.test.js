@@ -3,17 +3,20 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-function navigation({ project = 'noty-mac', root = '/work/noty-mac', gitFails = false, nonGit = false, sourceProject, directoryChanges = false, tmuxUnavailable = false,
+function navigation({ project = 'noty-mac', root = '/work/noty-mac', gitFails = false, nonGit = false, sourceProject, directoryChanges = false, tmuxUnavailable = false, codexSource, codexSourceChanges = false, onSource,
   target = '%31', branch, currentBranch = branch, duplicateAgent = false, unrelatedAgentOutsideGit = false, branchChanges = false, staleTarget = false, browserFails = false, onOpen } = {}) {
   const state = { notifications: [{ id: 'one', channelId: 'ai', title: 'Codex update', read: false, message: 'Done',
     metadata: { ...(target || sourceProject ? { tmux: { ...(target ? { target } : {}), ...(sourceProject ? { sourceProject } : {}) } } : {}),
-      ...(project ? { project: { name: project, branch } } : {}) } }] };
+      ...(project ? { project: { name: project, branch } } : {}),
+      ...(codexSource ? { agent: { threadId: '22222222-2222-4222-8222-222222222222' } } : {}) } }] };
   const commands = [];
   const handlers = new Map();
   const trayMessages = [], desktopMessages = [];
   const notificationWindow = messages => ({ isDestroyed: () => false, webContents: { send: (...args) => messages.push(args) } });
   let branchReads = 0;
   let directoryReads = 0;
+  let sourceReads = 0;
+  const sourceThreads = [];
   const context = {
     module: { exports: {} }, __dirname: '/app/dist/main', process, console, setTimeout,
     database: require('./helpers/notification-repository')(state),
@@ -47,6 +50,15 @@ function navigation({ project = 'noty-mac', root = '/work/noty-mac', gitFails = 
       if (name === './notification-core') return require('../dist/main/notification-core');
       if (name === './notification-groups') return require('../dist/main/notification-groups');
       if (name === './tmux-notification-target') return require('../dist/main/tmux-notification-target');
+      if (name === './codex-tmux-source') return {
+        sameCodexSource: require('../dist/main/codex-tmux-source').sameCodexSource,
+        resolveCodexThreadSource: async threadId => {
+          sourceReads++;
+          sourceThreads.push(threadId);
+          await onSource?.(state);
+          return codexSourceChanges && sourceReads > 1 ? { ...codexSource, clientPid: 9999 } : codexSource;
+        },
+      };
       if (name === './tmux-workspace') return require('../dist/main/tmux-workspace');
       if (name === './window') return { getWindow: () => notificationWindow(trayMessages) };
       if (name === './main-window') return { getMainWindow: () => notificationWindow(desktopMessages) };
@@ -56,8 +68,87 @@ function navigation({ project = 'noty-mac', root = '/work/noty-mac', gitFails = 
   };
   vm.runInNewContext(fs.readFileSync(require.resolve('../dist/main/index'), 'utf8') + '\nnotificationDatabase = database; updateTrayIcon = async () => {}; setupIPC();', context);
   return { commands, state, handlers, trayMessages, desktopMessages, jump: (options) => handlers.get('jump-to-notification-target')({}, 'one', options),
+    enrich: () => context.enrichNotificationSource(state.notifications[0]),
+    sourceQueries: () => sourceReads,
+    sourceThreads,
     notifications: () => handlers.get('get-notifications')() };
 }
+
+const boundSource = { target: '%90', panePid: 200, clientPid: 201, serverPid: 999, port: 55467,
+  threadId: '22222222-2222-4222-8222-222222222222', session: 'source-session' };
+
+test('a thread binding selects its own client even when the checkout and stored target are ambiguous', async () => {
+  const app = navigation({ codexSource: boundSource, duplicateAgent: true });
+  assert.equal((await app.jump()).success, true);
+  assert.ok(app.commands.some(command => command.includes('select-pane') && command.includes('%90')));
+  assert.equal(app.commands.some(command => command.includes('select-pane') && command.includes('%31')), false);
+  assert.equal(app.state.notifications[0].metadata.tmux.target, '%90');
+  assert.equal(app.state.notifications[0].read, true);
+});
+
+test('a verified thread client takes precedence over a temporary review checkout label', async () => {
+  const app = navigation({ project: 'review-checkout', root: '/work/original', codexSource: boundSource, duplicateAgent: true });
+  assert.equal((await app.jump()).success, true);
+  assert.equal(app.state.notifications[0].metadata.project.name, 'review-checkout');
+  assert.equal(app.state.notifications[0].metadata.tmux.sourceProject, 'original');
+});
+
+test('a changed or unavailable thread client never falls back to a matching project pane', async () => {
+  for (const options of [{ codexSource: { reason: 'source_unavailable' } }, { codexSource: boundSource, codexSourceChanges: true }]) {
+    const app = navigation(options);
+    const result = await app.jump();
+    assert.equal(result.success, false);
+    assert.equal(app.commands.some(command => command.includes('select-pane') || command[0] === '/usr/bin/open'), false);
+    assert.equal(app.state.notifications[0].read, false);
+  }
+});
+
+test('local source enrichment preserves content, concurrent acknowledgement and later arrivals', async () => {
+  const app = navigation({ codexSource: boundSource, onSource: state => {
+    state.notifications[0].read = true;
+    state.notifications.push({ id: 'arrived-later', title: 'Later', message: 'Preserved', read: false });
+  } });
+  const message = app.state.notifications[0].message;
+  assert.equal(await app.enrich(), true);
+  assert.equal(app.state.notifications[0].metadata.tmux.target, '%90');
+  assert.equal(app.state.notifications[0].metadata.agent.sourceThreadId, boundSource.threadId);
+  assert.equal(app.state.notifications[0].read, true);
+  assert.equal(app.state.notifications[0].message, message);
+  assert.equal(app.state.notifications[1].message, 'Preserved');
+  assert.equal(app.state.notifications[1].read, false);
+});
+
+test('simultaneous arrivals share source discovery while every click verifies it afresh', async () => {
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  const app = navigation({ codexSource: boundSource, onSource: () => pending });
+  const first = app.enrich();
+  const second = app.enrich();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app.sourceQueries(), 1);
+  release();
+  await Promise.all([first, second]);
+  assert.equal((await app.jump()).success, true);
+  assert.equal(app.sourceQueries(), 3);
+});
+
+test('a previously verified source cannot silently revert to directory-based routing', async () => {
+  for (const field of ['sourceThreadId', 'originThreadId']) {
+    const app = navigation({ codexSource: { reason: 'unsupported' }, branch: 'main', target: field === 'originThreadId' ? null : '%31' });
+    app.state.notifications[0].metadata.agent[field] = boundSource.threadId;
+    assert.equal((await app.jump()).reason, 'source_project_unverified');
+    assert.equal(app.state.notifications[0].read, false);
+    assert.equal(app.commands.some(command => command.includes('select-pane')), false);
+  }
+});
+
+test('saved origin threads remain usable when the publishing child is already gone', async () => {
+  const app = navigation({ codexSource: boundSource });
+  app.state.notifications[0].metadata.agent.threadId = '33333333-3333-4333-8333-333333333333';
+  app.state.notifications[0].metadata.agent.originThreadId = boundSource.threadId;
+  assert.equal((await app.jump()).success, true);
+  assert.deepEqual(app.sourceThreads, [boundSource.threadId, boundSource.threadId]);
+});
 
 test('navigation, dismissal and restore update both reminder windows from the same store', async () => {
   const app = navigation();
