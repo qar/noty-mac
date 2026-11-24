@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
-function publish(input, { panes, pane = '%31', codexThread = 'test-thread', session, sessionRaw, ancestors = [], parentSessions = [] }) {
+function publish(input, { panes, pane = '%31', codexThread = 'test-thread', session, sessionRaw, ancestors = [], parentSessions = [], transport = 'ntfy' }) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'noty-hook-'));
   try {
     const bin = path.join(root, 'bin');
@@ -46,11 +46,13 @@ require('node:fs').writeFileSync(process.env.TEST_CAPTURE, args[args.indexOf('-d
     execFileSync('bash', [path.join(__dirname, '..', 'scripts', 'ntfy-notify.example.sh')], {
       input: JSON.stringify({ title: 'Test notification', message: 'Done', ...input }),
       env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, NTFY_CHANNEL: 'test-topic', NTFY_SERVER: 'https://invalid.example',
-        NOTY_TRANSPORT: 'ntfy', TMUX_PANE: pane, TMUX: '/tmp/test-tmux/default,123,0', CODEX_THREAD_ID: codexThread,
+        NOTY_TRANSPORT: transport, NOTY_DATABASE_PATH: path.join(root, 'notifications.sqlite3'), TMUX_PANE: pane, TMUX: '/tmp/test-tmux/default,123,0', CODEX_THREAD_ID: codexThread,
         CODEX_HOME: path.join(root, 'codex'),
         TEST_PANES: JSON.stringify(panes), TEST_CAPTURE: capture, TEST_ANCESTORS: JSON.stringify(ancestors) },
     });
-    return JSON.parse(fs.readFileSync(capture, 'utf8'));
+    return transport === 'local'
+      ? JSON.parse(execFileSync('/usr/bin/sqlite3', ['-readonly', path.join(root, 'notifications.sqlite3'), 'SELECT payload FROM notifications LIMIT 1'], { encoding: 'utf8' }))
+      : JSON.parse(fs.readFileSync(capture, 'utf8'));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -149,6 +151,22 @@ test('native subagents follow structured parent threads without using the shared
     parentSessions: [{ id: parentThread, cwd: '/work/hl-trv-app', source: 'vscode' }],
   });
   assert.equal(payload.tmux?.target, '%34');
+});
+
+test('ambiguous local subagent messages preserve the original thread after the child exits', () => {
+  for (const source of ['exec', { subagent: { thread_spawn: { parent_thread_id: parentThread } } }]) {
+    const payload = publish({ cwd: '/work/rtm-review-283' }, {
+      panes: [...reviewPanes, { ...reviewPanes[1], pane_id: '%35' }], codexThread: reviewThread, transport: 'local',
+      session: { cwd: '/work/rtm-review-283', source },
+      ancestors: [{ pid: 101, parent: 1, command: 'codex exec --json', thread: parentThread }],
+      parentSessions: [{ id: parentThread, cwd: '/work/hl-trv-app', source: 'vscode' }],
+    });
+    assert.equal(payload.metadata.tmux, undefined);
+    assert.equal(payload.metadata.agent.threadId, reviewThread);
+    assert.equal(payload.metadata.agent.originThreadId, parentThread);
+    assert.match(payload.message, /Done/);
+    assert.equal(payload.read, false);
+  }
 });
 
 test('headless origin discovery stops at the shared app-server boundary', () => {
